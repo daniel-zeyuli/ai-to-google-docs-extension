@@ -63,18 +63,13 @@
         }
       }
 
-      // Strategy 3: Any element containing a katex-mathml child (catches wrapper spans)
-      // Guard: skip nodes already handled by Strategy 1/2 to prevent duplication
-      if (node.classList && !node.classList.contains('katex-display') && !node.classList.contains('katex') &&
-          node.querySelector && node.querySelector('.katex-mathml annotation[encoding="application/x-tex"]')) {
-        // Only if this node IS the katex container (not a large parent)
-        const katexEl = node.querySelector('.katex');
-        if (katexEl === null || node.classList.contains('katex') || node.querySelector(':scope > .katex-mathml')) {
-          const tex = extractTeX(node);
-          if (tex) {
-            const isDisplay = node.closest('.katex-display') || node.classList.contains('katex-display');
-            return isDisplay ? `\n$$${tex}$$\n` : `$${tex}$`;
-          }
+      // Strategy 3: wrapper span/div that directly contains .katex-mathml as a child
+      // (Strategies 1/2 handle .katex-display and .katex; this catches any remaining wrapper)
+      if (node.querySelector && node.querySelector(':scope > .katex-mathml annotation[encoding="application/x-tex"]')) {
+        const tex = extractTeX(node);
+        if (tex) {
+          const isDisplay = !!node.closest('.katex-display');
+          return isDisplay ? `\n$$${tex}$$\n` : `$${tex}$`;
         }
       }
 
@@ -546,7 +541,7 @@
 
   const observer = new MutationObserver(() => {
     clearTimeout(observer._t);
-    observer._t = setTimeout(addButtons, 500);
+    observer._t = setTimeout(addButtons, 200);
   });
   observer.observe(document.body, { childList: true, subtree: true });
 })();
