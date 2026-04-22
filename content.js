@@ -342,7 +342,7 @@
         e.preventDefault(); e.stopPropagation();
         exportMessage(msg.querySelector('.markdown') || msg);
       });
-      actionArea.appendChild(btn);
+      insertBeforeMoreButton(actionArea, btn);
     }
   }
 
@@ -384,7 +384,7 @@
           e.preventDefault(); e.stopPropagation();
           exportMessage(resp);
         });
-        actionArea.appendChild(btn);
+        insertBeforeMoreButton(actionArea, btn);
       }
     }
 
@@ -418,7 +418,7 @@
         e.preventDefault(); e.stopPropagation();
         exportMessage(contentEl);
       });
-      actionBar.appendChild(btn);
+      insertBeforeMoreButton(actionBar, btn);
     }
   }
 
@@ -445,6 +445,16 @@
   // ═══════════════════════════════════════════════════════════════
   //  SHARED: CREATE BUTTON
   // ═══════════════════════════════════════════════════════════════
+
+  function insertBeforeMoreButton(container, el) {
+    const moreBtn = container.querySelector(
+      'button[aria-label*="more" i], button[aria-label*="option" i], button[data-tooltip*="more" i]'
+    );
+    if (!moreBtn) { container.appendChild(el); return; }
+    let anchor = moreBtn;
+    while (anchor.parentElement !== container) anchor = anchor.parentElement;
+    container.insertBefore(el, anchor);
+  }
 
   function createExportButton() {
     const btn = document.createElement('button');
