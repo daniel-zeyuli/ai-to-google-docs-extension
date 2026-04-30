@@ -685,6 +685,36 @@
     return firstMeaningful.trim().slice(0, 85);
   }
 
+  // Open the Drive folder picker (via background worker) and wait for the user
+  // to select a folder or cancel. Returns 'done', 'cancelled', or 'timeout'.
+  function _pickDriveFolder() {
+    return new Promise((resolve) => {
+      chrome.storage.local.remove('pickerState', () => {
+        chrome.runtime.sendMessage({ action: 'openPickerWindow' }, () => {});
+        const handler = (changes) => {
+          if (changes.pickerState) {
+            chrome.storage.onChanged.removeListener(handler);
+            clearTimeout(tid);
+            resolve(changes.pickerState.newValue);
+          }
+        };
+        chrome.storage.onChanged.addListener(handler);
+        const tid = setTimeout(() => {
+          chrome.storage.onChanged.removeListener(handler);
+          resolve('timeout');
+        }, 180000);
+      });
+    });
+  }
+
+  function _refreshDriveBtn(btn) {
+    chrome.storage.local.get('customFolderName', (d) => {
+      const n = d.customFolderName || 'AI Chat Exports';
+      const s = n.length > 18 ? n.slice(0, 16) + '…' : n;
+      btn.textContent = `☁️ ${s}`;
+    });
+  }
+
   function showSelectPanel(thisMessageEl) {
     const existing = document.querySelector('.cgd-panel');
     if (existing) { existing.remove(); return; }
@@ -798,20 +828,6 @@
       chrome.storage.local.set({ exportDest: 'drive' });
       applyDestUI();
       exportBtn.textContent = 'Export to Docs →';
-      chrome.windows.create({
-        url: chrome.runtime.getURL('picker-host.html'),
-        type: 'popup', width: 640, height: 540
-      });
-      // Update folder name in Drive button after picker saves to storage
-      const onFolderPick = (changes) => {
-        if (changes.customFolderName) {
-          const n = changes.customFolderName.newValue || 'AI Chat Exports';
-          const s = n.length > 18 ? n.slice(0, 16) + '…' : n;
-          btnDrive.textContent = `☁️ ${s}`;
-          chrome.storage.onChanged.removeListener(onFolderPick);
-        }
-      };
-      chrome.storage.onChanged.addListener(onFolderPick);
     });
 
     btnLocal.addEventListener('click', () => {
@@ -982,6 +998,12 @@
       const selectedIndices = getSelectedIndices();
       if (selectedIndices.length === 0) return;
 
+      if (exportDest === 'drive') {
+        const result = await _pickDriveFolder();
+        if (result !== 'done') return;
+        _refreshDriveBtn(btnDrive);
+      }
+
       // Panel stays open — user can pick again for another export
       exportBtn.disabled = true;
       exportBtn.textContent = 'Exporting…';
@@ -1006,13 +1028,23 @@
 
     header.querySelector('.cgd-panel-close').addEventListener('click', close);
 
-    btnLast.addEventListener('click', () => {
+    btnLast.addEventListener('click', async () => {
+      if (exportDest === 'drive') {
+        const result = await _pickDriveFolder();
+        if (result !== 'done') return;
+        _refreshDriveBtn(btnDrive);
+      }
       close();
       const el = getLastAIMessage();
       if (el) exportMessage(el); else showToast('❌ No AI response found', true);
     });
 
-    btnFull.addEventListener('click', () => {
+    btnFull.addEventListener('click', async () => {
+      if (exportDest === 'drive') {
+        const result = await _pickDriveFolder();
+        if (result !== 'done') return;
+        _refreshDriveBtn(btnDrive);
+      }
       close();
       exportFullConversation();
     });

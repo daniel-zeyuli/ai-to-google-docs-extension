@@ -26,10 +26,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.data?.type === 'FOLDER_SELECTED') {
       chrome.storage.local.set({
         customFolderId: e.data.folderId,
-        customFolderName: e.data.folderName
+        customFolderName: e.data.folderName,
+        pickerState: 'done'
       }, () => window.close());
     } else if (e.data?.type === 'PICKER_CANCEL') {
-      window.close();
+      chrome.storage.local.set({ pickerState: 'cancelled' }, () => window.close());
     }
   });
 });

@@ -58,6 +58,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
+
+  if (request.action === 'openPickerWindow') {
+    chrome.windows.create(
+      { url: chrome.runtime.getURL('picker-host.html'), type: 'popup', width: 640, height: 540 },
+      () => sendResponse({ ok: true })
+    );
+    return true;
+  }
 });
 
 // ── Keyboard shortcut: forward to active tab's content script ──
