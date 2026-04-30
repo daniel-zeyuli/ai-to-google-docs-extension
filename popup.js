@@ -1,23 +1,20 @@
-document.addEventListener('DOMContentLoaded', async () => {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) return;
-
-  const headerSub      = document.getElementById('header-sub');
-  const mainEl         = document.getElementById('main');
-  const emptyEl        = document.getElementById('empty');
-  const statusEl       = document.getElementById('status');
-  const btnExport      = document.getElementById('btn-export');
-  const recentSection  = document.getElementById('recent-section');
-  const recentList     = document.getElementById('recent-list');
+document.addEventListener('DOMContentLoaded', () => {
   const optDrive       = document.getElementById('opt-drive');
   const optLocal       = document.getElementById('opt-local');
   const driveDetail    = document.getElementById('drive-detail');
   const changeFolderBtn = document.getElementById('change-folder');
-  const gearBtn        = document.getElementById('gear-btn');
-  const settingsPanel  = document.getElementById('settings-panel');
+  const modeHint       = document.getElementById('mode-hint');
+  const shortcutDisplay = document.getElementById('shortcut-display');
+  const shortcutCustomize = document.getElementById('shortcut-customize');
 
   let currentDest = 'drive';
   let currentMode = 'last';
+
+  const MODE_HINTS = {
+    last:   'Exports the last AI response',
+    full:   'Exports the full conversation',
+    select: 'Opens panel to pick responses'
+  };
 
   // ── Load saved settings ──
   chrome.storage.local.get(['exportDest', 'defaultExportMode', 'customFolderName'], (d) => {
@@ -28,28 +25,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (d.customFolderName) driveDetail.textContent = d.customFolderName;
   });
 
+  // ── Read real keyboard shortcut ──
+  chrome.commands.getAll((commands) => {
+    const cmd = commands.find(c => c.name === 'trigger-export');
+    if (cmd && cmd.shortcut) shortcutDisplay.textContent = cmd.shortcut;
+    else shortcutDisplay.textContent = 'Not set';
+  });
+
   function applyDest() {
     optDrive.classList.toggle('active', currentDest === 'drive');
     optLocal.classList.toggle('active', currentDest === 'local');
-    updateExportLabel();
-    updateRecent();
   }
 
   function applyMode() {
     document.querySelectorAll('.mode-tab').forEach(b => {
       b.classList.toggle('active', b.dataset.mode === currentMode);
     });
-    updateExportLabel();
-  }
-
-  function updateExportLabel() {
-    const drive = currentDest === 'drive';
-    if (currentMode === 'last')
-      btnExport.textContent = drive ? '↩ Export Last' : '↩ Save Last';
-    else if (currentMode === 'full')
-      btnExport.textContent = drive ? '≡ Export Full' : '≡ Save Full';
-    else
-      btnExport.textContent = drive ? '☑ Pick & Export' : '☑ Pick & Save';
+    modeHint.textContent = MODE_HINTS[currentMode] || '';
   }
 
   // ── Destination selection ──
@@ -84,91 +76,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // ── Gear / settings ──
-  gearBtn.addEventListener('click', () => {
-    const open = settingsPanel.style.display !== 'none';
-    settingsPanel.style.display = open ? 'none' : 'block';
-    gearBtn.classList.toggle('on', !open);
-  });
-
-  // ── Shortcuts ──
-  document.getElementById('shortcut-customize').addEventListener('click', (e) => {
-    e.preventDefault();
+  // ── Keyboard shortcut customize ──
+  shortcutCustomize.addEventListener('click', () => {
     chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
     window.close();
-  });
-  document.getElementById('customize-shortcut').addEventListener('click', () => {
-    chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
-    window.close();
-  });
-
-  // ── Export ──
-  function setWorking() {
-    btnExport.disabled = true;
-    statusEl.textContent = 'Working…';
-  }
-
-  function send(action) {
-    setWorking();
-    chrome.tabs.sendMessage(tab.id, { action, dest: currentDest }, () => {
-      if (chrome.runtime.lastError) {
-        statusEl.textContent = 'Error — try refreshing the page';
-        btnExport.disabled = false;
-        return;
-      }
-      setTimeout(() => window.close(), 400);
-    });
-  }
-
-  btnExport.addEventListener('click', () => {
-    if (currentMode === 'last')      send('exportLast');
-    else if (currentMode === 'full') send('exportFull');
-    else                             send('openPanel');
-  });
-
-  // ── Recent exports (Drive mode only) ──
-  function updateRecent() {
-    if (currentDest !== 'drive') { recentSection.style.display = 'none'; return; }
-    try {
-      const { hostname, pathname } = new URL(tab.url);
-      const convKey = hostname + pathname;
-      chrome.storage.local.get(['lastExports', 'globalRecentDocs'], (d) => {
-        const raw = (d.lastExports || {})[convKey] || null;
-        const convHistory = Array.isArray(raw) ? raw : (raw ? [raw] : []);
-        const convIds = new Set(convHistory.map(e => e.fileId));
-        const globalExtra = (Array.isArray(d.globalRecentDocs) ? d.globalRecentDocs : [])
-          .filter(e => !convIds.has(e.fileId));
-        const all = [...convHistory, ...globalExtra].slice(0, 5);
-
-        if (all.length === 0) { recentSection.style.display = 'none'; return; }
-        recentSection.style.display = 'block';
-        recentList.innerHTML = '';
-        for (const exp of all) {
-          const a = document.createElement('a');
-          a.className = 'recent-chip';
-          a.href = exp.url || `https://docs.google.com/document/d/${exp.fileId}/edit`;
-          a.target = '_blank';
-          const name = exp.fileName || 'Untitled';
-          const short = name.length > 26 ? name.slice(0, 24) + '…' : name;
-          a.innerHTML = `<span class="r-icon">↩</span><span class="r-name">${short}</span><span class="r-arrow">↗</span>`;
-          a.title = name;
-          recentList.appendChild(a);
-        }
-      });
-    } catch (_) {
-      recentSection.style.display = 'none';
-    }
-  }
-
-  // ── Platform detection ──
-  chrome.tabs.sendMessage(tab.id, { action: 'getPlatform' }, (resp) => {
-    if (chrome.runtime.lastError || !resp?.platform) {
-      emptyEl.style.display = 'block';
-      return;
-    }
-    const count = resp.responseCount || 0;
-    headerSub.textContent = `${resp.platform} · ${count} response${count !== 1 ? 's' : ''}`;
-    mainEl.style.display = 'block';
-    updateRecent();
   });
 });

@@ -53,23 +53,23 @@
     .header-text { flex: 1; min-width: 0; }
     .header-title { font-size: 12px; font-weight: 600; color: var(--text); }
     .header-sub   { font-size: 10px; color: var(--muted); margin-top: 1px; }
-    .gear-btn {
-      background: none; border: none; cursor: pointer;
-      color: var(--faint); font-size: 15px;
-      padding: 3px 5px; border-radius: 5px; line-height: 1;
-      transition: all 0.13s; flex-shrink: 0;
+    .version-badge {
+      font-size: 10px; color: var(--muted);
+      background: var(--btn-bg); padding: 2px 6px;
+      border-radius: 10px; flex-shrink: 0; font-weight: 500;
     }
-    .gear-btn:hover, .gear-btn.on { color: var(--sub); background: var(--btn-bg); }
 
     hr { border: none; border-top: 1px solid var(--border); }
 
-    /* ── Save-to section ── */
-    .save-section { padding: 8px 10px 7px; border-bottom: 1px solid var(--border); }
+    /* ── Section label ── */
     .section-label {
       font-size: 10px; font-weight: 600; color: var(--faint);
       letter-spacing: 0.5px; text-transform: uppercase;
       padding: 0 2px; margin-bottom: 5px;
     }
+
+    /* ── Save-to section ── */
+    .save-section { padding: 8px 10px 7px; border-bottom: 1px solid var(--border); }
     .save-opt {
       display: flex; align-items: center; gap: 8px;
       padding: 6px 8px; border-radius: 8px;
@@ -105,29 +105,8 @@
     }
     .save-change:hover { background: var(--blue-bg); color: var(--blue); }
 
-    /* ── Recent ── */
-    .recent-section { padding: 7px 12px 5px; border-bottom: 1px solid var(--border); }
-    .recent-list {
-      display: flex; flex-direction: column; gap: 1px;
-      max-height: 72px; overflow-y: auto; scrollbar-width: none;
-    }
-    .recent-list::-webkit-scrollbar { display: none; }
-    .recent-chip {
-      display: flex; align-items: center; gap: 6px;
-      padding: 4px 6px; border-radius: 6px;
-      font-size: 11px; color: var(--sub);
-      text-decoration: none; transition: background 0.12s;
-      white-space: nowrap; overflow: hidden;
-    }
-    .recent-chip:hover { background: var(--blue-bg); color: var(--blue); }
-    .r-icon  { font-size: 10px; color: var(--muted); flex-shrink: 0; }
-    .r-name  { flex: 1; overflow: hidden; text-overflow: ellipsis; }
-    .r-arrow { font-size: 9px; color: var(--faint); flex-shrink: 0; }
-    .recent-chip:hover .r-icon,
-    .recent-chip:hover .r-arrow { color: var(--blue); }
-
-    /* ── Mode strip (segmented control) ── */
-    .mode-section { padding: 8px 12px 6px; }
+    /* ── Mode section ── */
+    .mode-section { padding: 8px 12px 9px; border-bottom: 1px solid var(--border); }
     .mode-strip {
       display: flex;
       background: var(--btn-bg); border-radius: 9px; padding: 3px; gap: 0;
@@ -142,42 +121,28 @@
       background: var(--bg); color: var(--blue);
       box-shadow: var(--shadow);
     }
-
-    /* ── Export button ── */
-    .export-wrap { padding: 4px 12px 10px; }
-    .btn-export {
-      display: block; width: 100%; padding: 10px;
-      background: var(--blue); color: #fff;
-      border: none; border-radius: 9px;
-      font-size: 13px; font-weight: 600;
-      cursor: pointer; text-align: center;
-      transition: all 0.15s; letter-spacing: -0.1px;
-    }
-    .btn-export:hover:not(:disabled) { background: var(--blue-dark); }
-    .btn-export:disabled { opacity: 0.4; cursor: default; }
-
-    .status {
-      font-size: 11px; color: var(--muted); text-align: center;
-      min-height: 14px; padding: 0 12px 4px;
+    .mode-hint {
+      font-size: 10px; color: var(--muted);
+      margin-top: 6px; padding: 0 2px; min-height: 13px;
     }
 
-    /* ── Empty state ── */
-    .empty { padding: 24px 12px 20px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.6; }
-
-    /* ── Shortcut hint ── */
-    .shortcut-hint {
-      text-align: center; font-size: 10px; color: var(--faint);
-      padding: 5px 12px 8px; letter-spacing: 0.2px;
+    /* ── Shortcut section ── */
+    .shortcut-section { padding: 8px 10px 11px; }
+    .shortcut-row {
+      display: flex; align-items: center;
+      justify-content: space-between; margin-top: 5px;
     }
-    .shortcut-hint a { color: var(--faint); text-decoration: none; }
-    .shortcut-hint a:hover { color: var(--muted); text-decoration: underline; }
-
-    /* ── Settings ── */
-    .settings-panel { padding: 8px 12px 10px; border-top: 1px solid var(--border); display: none; }
-    .settings-row { display: flex; align-items: center; justify-content: space-between; padding: 3px 0; }
-    .settings-label { font-size: 11px; color: var(--muted); }
-    .settings-link { font-size: 11px; color: var(--blue); background: none; border: none; cursor: pointer; padding: 0; }
-    .settings-link:hover { text-decoration: underline; }
+    kbd.shortcut-display {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+      font-size: 11px; background: var(--btn-bg);
+      border: 1px solid var(--faint); border-radius: 5px;
+      padding: 3px 7px; color: var(--sub);
+    }
+    .shortcut-link {
+      background: none; border: none;
+      font-size: 11px; color: var(--blue); cursor: pointer; padding: 0;
+    }
+    .shortcut-link:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -186,79 +151,52 @@
   <img src="icons/icon48.png" alt="">
   <div class="header-text">
     <div class="header-title">AI Chat Exporter</div>
-    <div id="header-sub" class="header-sub">for Google Docs</div>
+    <div class="header-sub">for Google Docs</div>
   </div>
-  <button id="gear-btn" class="gear-btn" title="Settings">⚙</button>
+  <span class="version-badge">3.9.0</span>
 </div>
 
 <hr>
 
-<!-- Supported page -->
-<div id="main" style="display:none">
-
-  <!-- Save to -->
-  <div class="save-section">
-    <div class="section-label">Save to</div>
-    <div class="save-opt active" id="opt-drive" data-dest="drive">
-      <span class="save-radio"></span>
-      <span class="save-icon">☁️</span>
-      <div class="save-info">
-        <span class="save-title">Google Drive</span>
-        <span class="save-detail" id="drive-detail">AI Chat Exports</span>
-      </div>
-      <button class="save-change" id="change-folder" title="Change folder">›</button>
+<!-- Save to -->
+<div class="save-section">
+  <div class="section-label">Save to</div>
+  <div class="save-opt active" id="opt-drive" data-dest="drive">
+    <span class="save-radio"></span>
+    <span class="save-icon">☁️</span>
+    <div class="save-info">
+      <span class="save-title">Google Drive</span>
+      <span class="save-detail" id="drive-detail">AI Chat Exports</span>
     </div>
-    <div class="save-opt" id="opt-local" data-dest="local">
-      <span class="save-radio"></span>
-      <span class="save-icon">💾</span>
-      <div class="save-info">
-        <span class="save-title">Local .docx</span>
-        <span class="save-detail">Save as file</span>
-      </div>
+    <button class="save-change" id="change-folder" title="Change folder">›</button>
+  </div>
+  <div class="save-opt" id="opt-local" data-dest="local">
+    <span class="save-radio"></span>
+    <span class="save-icon">💾</span>
+    <div class="save-info">
+      <span class="save-title">Local .docx</span>
+      <span class="save-detail">Save as file</span>
     </div>
   </div>
-
-  <!-- Recent exports (Drive only) -->
-  <div id="recent-section" class="recent-section" style="display:none">
-    <div class="section-label">Recent</div>
-    <div id="recent-list" class="recent-list"></div>
-  </div>
-
-  <hr>
-
-  <!-- Mode (segmented control) -->
-  <div class="mode-section">
-    <div class="mode-strip">
-      <button class="mode-tab" data-mode="last">↩ Last</button>
-      <button class="mode-tab" data-mode="full">≡ Full</button>
-      <button class="mode-tab" data-mode="select">☑ Pick</button>
-    </div>
-  </div>
-
-  <!-- Export -->
-  <div class="export-wrap">
-    <button id="btn-export" class="btn-export">Export →</button>
-  </div>
-  <div id="status" class="status"></div>
-
 </div>
 
-<!-- Not on supported page -->
-<div id="empty" style="display:none">
-  <div class="empty">Open ChatGPT, Gemini,<br>or Claude to export.</div>
+<!-- Default mode -->
+<div class="mode-section">
+  <div class="section-label">Default mode</div>
+  <div class="mode-strip">
+    <button class="mode-tab" data-mode="last">↩ Last</button>
+    <button class="mode-tab" data-mode="full">≡ Full</button>
+    <button class="mode-tab" data-mode="select">☑ Pick</button>
+  </div>
+  <div class="mode-hint" id="mode-hint"></div>
 </div>
 
-<hr>
-<div class="shortcut-hint">⌘⇧E / Ctrl+Shift+E · <a id="shortcut-customize" href="#">Customize</a></div>
-
-<div id="settings-panel" class="settings-panel">
-  <div class="settings-row">
-    <span class="settings-label">Keyboard shortcut</span>
-    <button id="customize-shortcut" class="settings-link">Customize →</button>
-  </div>
-  <div class="settings-row">
-    <span class="settings-label">Version</span>
-    <span class="settings-label">3.8.0</span>
+<!-- Keyboard shortcut -->
+<div class="shortcut-section">
+  <div class="section-label">Keyboard shortcut</div>
+  <div class="shortcut-row">
+    <kbd class="shortcut-display" id="shortcut-display">⌘⇧E</kbd>
+    <button class="shortcut-link" id="shortcut-customize">Customize →</button>
   </div>
 </div>
 

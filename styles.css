@@ -404,6 +404,43 @@
   min-height: 0;
 }
 
+/* ── In-page button: path + label spans ─────────────────────── */
+.cgd-btn-path {
+  font-size: 11px;
+  color: #6b7280;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.cgd-btn-label {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.cgd-btn-path + .cgd-btn-label::before {
+  content: ' · ';
+  color: #9ca3af;
+}
+
+/* ── Panel recent row ────────────────────────────────────────── */
+.cgd-recent-row {
+  padding: 0 8px 5px;
+  flex-direction: column;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.cgd-recent-chip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border-radius: 6px;
+  font-size: 11px; color: var(--p-sub);
+  text-decoration: none; transition: background 0.12s;
+  white-space: nowrap; overflow: hidden;
+}
+.cgd-recent-chip:hover { background: var(--p-accent-bg); color: var(--p-accent); }
+.cgd-rc-icon  { font-size: 10px; color: var(--p-muted); flex-shrink: 0; }
+.cgd-rc-name  { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.cgd-rc-arrow { font-size: 9px; color: var(--p-faint); flex-shrink: 0; }
+.cgd-recent-chip:hover .cgd-rc-icon,
+.cgd-recent-chip:hover .cgd-rc-arrow { color: var(--p-accent); }
+
 /* ── CSV button ──────────────────────────────────────────────── */
 .cgd-csv-btn {
   flex-shrink: 0;

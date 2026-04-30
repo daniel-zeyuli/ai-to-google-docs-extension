@@ -17,6 +17,14 @@
   let exportDest = 'drive';
   chrome.storage.local.get('exportDest', d => { exportDest = d.exportDest || 'drive'; });
 
+  // Update all injected export buttons when destination or folder changes
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes.exportDest || changes.customFolderName) {
+      if (changes.exportDest) exportDest = changes.exportDest.newValue || 'drive';
+      document.querySelectorAll('.' + BUTTON_CLASS).forEach(btn => _updateExportBtnContent(btn));
+    }
+  });
+
   function isDarkMode() {
     const root = document.documentElement;
     const body = document.body;
@@ -677,10 +685,12 @@
     const messages = getAllAIMessages();
     if (messages.length === 0) { showToast('❌ No AI responses found', true); return; }
 
-    _buildSelectPanel(messages, thisMessageEl);
+    chrome.storage.local.get(['customFolderName', 'lastExports', 'globalRecentDocs'], (storageData) => {
+      _buildSelectPanel(messages, thisMessageEl, storageData);
+    });
   }
 
-  function _buildSelectPanel(messages, thisMessageEl) {
+  function _buildSelectPanel(messages, thisMessageEl, storageData = {}) {
     const platform = isGemini ? 'Gemini' : isClaude ? 'Claude' : 'ChatGPT';
     const dark = isDarkMode();
 
@@ -694,7 +704,7 @@
     // ── Header ──
     const header = document.createElement('div');
     header.className = 'cgd-panel-header';
-    header.innerHTML = `<span class="cgd-panel-title">Export</span><button class="cgd-panel-close" title="Close">✕</button>`;
+    header.innerHTML = `<span class="cgd-panel-title">Export · ${platform}</span><button class="cgd-panel-close" title="Close">✕</button>`;
 
     header.addEventListener('mousedown', (e) => {
       if (e.target.closest('.cgd-panel-close')) return;
@@ -716,6 +726,92 @@
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
       e.preventDefault();
+    });
+
+    // ── Dest row: Drive / Local ──
+    const folderName = storageData.customFolderName || 'AI Chat Exports';
+    const folderShort = folderName.length > 18 ? folderName.slice(0, 16) + '…' : folderName;
+
+    const destRow = document.createElement('div');
+    destRow.className = 'cgd-dest-row';
+
+    const btnDrive = document.createElement('button');
+    btnDrive.className = 'cgd-dest-btn';
+    btnDrive.textContent = `☁️ ${folderShort}`;
+
+    const btnLocal = document.createElement('button');
+    btnLocal.className = 'cgd-dest-btn';
+    btnLocal.textContent = '💾 Local .docx';
+
+    destRow.appendChild(btnDrive);
+    destRow.appendChild(btnLocal);
+
+    // ── Recent exports row (Drive only, up to 2 chips) ──
+    const recentRow = document.createElement('div');
+    recentRow.className = 'cgd-recent-row';
+
+    const convKey = location.hostname + location.pathname;
+    const rawExp = (storageData.lastExports || {})[convKey] || null;
+    const convHistory = Array.isArray(rawExp) ? rawExp : (rawExp ? [rawExp] : []);
+    const convIds = new Set(convHistory.map(e => e.fileId));
+    const globalExtra = (Array.isArray(storageData.globalRecentDocs) ? storageData.globalRecentDocs : [])
+      .filter(e => !convIds.has(e.fileId));
+    const recents = [...convHistory, ...globalExtra].slice(0, 2);
+
+    function buildRecentChips() {
+      recentRow.innerHTML = '';
+      if (exportDest !== 'drive' || recents.length === 0) {
+        recentRow.style.display = 'none';
+        return;
+      }
+      recentRow.style.display = 'flex';
+      recents.forEach(exp => {
+        const chip = document.createElement('a');
+        chip.className = 'cgd-recent-chip';
+        chip.href = exp.url || `https://docs.google.com/document/d/${exp.fileId}/edit`;
+        chip.target = '_blank';
+        const name = exp.fileName || 'Untitled';
+        const short = name.length > 28 ? name.slice(0, 26) + '…' : name;
+        chip.innerHTML = `<span class="cgd-rc-icon">↩</span><span class="cgd-rc-name">${short}</span><span class="cgd-rc-arrow">↗</span>`;
+        chip.title = name;
+        recentRow.appendChild(chip);
+      });
+    }
+    buildRecentChips();
+
+    function applyDestUI() {
+      btnDrive.classList.toggle('cgd-dest-active', exportDest === 'drive');
+      btnLocal.classList.toggle('cgd-dest-active', exportDest === 'local');
+      buildRecentChips();
+    }
+    applyDestUI();
+
+    btnDrive.addEventListener('click', () => {
+      exportDest = 'drive';
+      chrome.storage.local.set({ exportDest: 'drive' });
+      applyDestUI();
+      exportBtn.textContent = 'Export to Docs →';
+      chrome.windows.create({
+        url: chrome.runtime.getURL('picker-host.html'),
+        type: 'popup', width: 640, height: 540
+      });
+      // Update folder name in Drive button after picker saves to storage
+      const onFolderPick = (changes) => {
+        if (changes.customFolderName) {
+          const n = changes.customFolderName.newValue || 'AI Chat Exports';
+          const s = n.length > 18 ? n.slice(0, 16) + '…' : n;
+          btnDrive.textContent = `☁️ ${s}`;
+          chrome.storage.onChanged.removeListener(onFolderPick);
+        }
+      };
+      chrome.storage.onChanged.addListener(onFolderPick);
+    });
+
+    btnLocal.addEventListener('click', () => {
+      exportDest = 'local';
+      chrome.storage.local.set({ exportDest: 'local' });
+      applyDestUI();
+      exportBtn.textContent = 'Save .docx →';
     });
 
     // ── Action row: Last / Full / Pick ──
@@ -831,7 +927,7 @@
 
     const exportBtn = document.createElement('button');
     exportBtn.className = 'cgd-export-sel-btn';
-    exportBtn.textContent = 'Export →';
+    exportBtn.textContent = exportDest === 'local' ? 'Save .docx →' : 'Export to Docs →';
 
     footerMain.appendChild(countLabel);
     footerMain.appendChild(exportBtn);
@@ -843,6 +939,8 @@
 
     // ── Assemble ──
     panel.appendChild(header);
+    panel.appendChild(destRow);
+    panel.appendChild(recentRow);
     panel.appendChild(actionRow);
     panel.appendChild(pickArea);
 
@@ -875,18 +973,28 @@
 
     async function exportSelected() {
       const selectedIndices = getSelectedIndices();
-      close();
       if (selectedIndices.length === 0) return;
-      if (selectedIndices.length === 1) { exportMessage(messages[selectedIndices[0]]); return; }
-      _resetImgCaptures();
-      showToast('⏳ Generating document...');
-      const parts = selectedIndices.map(origIdx => {
-        const text = extractMarkdown(messages[origIdx]).trim();
-        return text ? `## ${platform} (Response ${origIdx + 1})\n\n${text}` : '';
-      }).filter(Boolean);
-      const imageMap = await _captureImages();
-      if (parts.length) await exportMarkdown(parts.join('\n\n---\n\n'), '_selected', imageMap);
-      else showToast('❌ Could not extract content', true);
+
+      // Panel stays open — user can pick again for another export
+      exportBtn.disabled = true;
+      exportBtn.textContent = 'Exporting…';
+
+      if (selectedIndices.length === 1) {
+        await exportMessage(messages[selectedIndices[0]]);
+      } else {
+        _resetImgCaptures();
+        showToast('⏳ Generating document...');
+        const parts = selectedIndices.map(origIdx => {
+          const text = extractMarkdown(messages[origIdx]).trim();
+          return text ? `## ${platform} (Response ${origIdx + 1})\n\n${text}` : '';
+        }).filter(Boolean);
+        const imageMap = await _captureImages();
+        if (parts.length) await exportMarkdown(parts.join('\n\n---\n\n'), '_selected', imageMap);
+        else showToast('❌ Could not extract content', true);
+      }
+
+      exportBtn.disabled = false;
+      exportBtn.textContent = exportDest === 'local' ? 'Save .docx →' : 'Export to Docs →';
     }
 
     header.querySelector('.cgd-panel-close').addEventListener('click', close);
@@ -1076,11 +1184,43 @@
     container.insertBefore(el, anchor);
   }
 
+  function _updateExportBtnContent(btn) {
+    chrome.storage.local.get('customFolderName', (d) => {
+      const folderName = d.customFolderName || 'AI Chat Exports';
+      const pathSpan  = btn.querySelector('.cgd-btn-path');
+      const labelSpan = btn.querySelector('.cgd-btn-label');
+      if (!pathSpan || !labelSpan) return;
+      if (exportDest === 'local') {
+        pathSpan.textContent = '💾 Local';
+        labelSpan.textContent = 'Save .docx';
+      } else {
+        const short = folderName.length > 18 ? folderName.slice(0, 16) + '…' : folderName;
+        pathSpan.textContent = `☁️ ${short}`;
+        labelSpan.textContent = 'Export to Docs';
+      }
+    });
+  }
+
   function createExportButton() {
     const btn = document.createElement('button');
     btn.className = BUTTON_CLASS;
-    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Export to Docs <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>`;
+
+    const svgFile = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
+    const svgChevron = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>`;
+
+    const pathSpan = document.createElement('span');
+    pathSpan.className = 'cgd-btn-path';
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'cgd-btn-label';
+
+    btn.insertAdjacentHTML('beforeend', svgFile);
+    btn.appendChild(pathSpan);
+    btn.appendChild(labelSpan);
+    btn.insertAdjacentHTML('beforeend', svgChevron);
+
     btn.title = 'Export options';
+    _updateExportBtnContent(btn);
     return btn;
   }
 
