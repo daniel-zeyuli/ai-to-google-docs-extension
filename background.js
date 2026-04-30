@@ -196,7 +196,17 @@ async function handleUpload(docxBase64, filename) {
   try {
     token = await getAuthToken(true);
   } catch (e) {
-    throw new Error('Google sign-in failed: ' + e.message + '. Make sure you set up OAuth (see SETUP_GUIDE.md).');
+    const msg = e.message || '';
+    if (msg.includes('not signed in') || msg.includes('not sign in')) {
+      throw new Error('sign-in: Not signed into Chrome. Please sign in to your Google account in Chrome settings.');
+    }
+    if (msg.includes('invalid_client') || msg.includes('client_id')) {
+      throw new Error('invalid_client: OAuth client ID mismatch. Check Google Cloud Console.');
+    }
+    if (msg.includes('OAuth2 not granted') || msg.includes('not granted')) {
+      throw new Error('sign-in: Drive access was denied. Please allow access when prompted.');
+    }
+    throw new Error('sign-in: ' + msg);
   }
 
   if (!token) throw new Error('No auth token received. Please try again.');

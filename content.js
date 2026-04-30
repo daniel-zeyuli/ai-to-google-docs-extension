@@ -485,8 +485,15 @@
         });
 
       } catch(e) {
-        if (e.message.includes('OAuth2') || e.message.includes('client_id') || e.message.includes('invalid_client') || e.message.includes('sign-in')) {
+        const msg = e.message || '';
+        if (msg.includes('not signed in') || msg.includes('Not signed in')) {
+          showToast('⚠️ Sign in to Chrome with your Google account to use Drive export. Downloading .docx instead.', true, 7000);
+        } else if (msg.includes('denied') || msg.includes('not granted')) {
+          showToast('⚠️ Drive access denied. Please allow access when prompted. Downloading .docx instead.', true, 7000);
+        } else if (msg.includes('invalid_client') || msg.includes('client_id')) {
           showToast('⚠️ Google Drive not set up yet. Downloading .docx instead.<br><small>See SETUP_GUIDE.md to enable one-click export.</small>', true, 6000);
+        } else if (msg.includes('sign-in') || msg.includes('OAuth2')) {
+          showToast('⚠️ Could not sign in to Google. Downloading .docx instead.', true, 6000);
         } else {
           showToast('⚠️ Drive upload failed. Downloading .docx instead.', true);
         }
