@@ -17,24 +17,89 @@ document.addEventListener('DOMContentLoaded', () => {
     btnOk.disabled = false;
   });
 
-  // Fetch Drive root folders via background
-  chrome.runtime.sendMessage({ action: 'listFolders' }, (result) => {
-    if (!result?.success) {
-      listEl.innerHTML = '';
-      const s = document.createElement('div');
-      s.className = 'status';
-      s.textContent = result?.error || 'Could not load folders. Make sure you are signed in to Google.';
-      listEl.appendChild(s);
+  loadFolders();
+
+  // ── Auth + folder fetch (runs directly in the extension page so
+  //    chrome.identity can show its interactive UI here) ──────────
+  async function getToken(interactive) {
+    return new Promise((resolve) => {
+      chrome.identity.getAuthToken({ interactive }, (token) => {
+        if (chrome.runtime.lastError || !token) resolve(null);
+        else resolve(token);
+      });
+    });
+  }
+
+  async function loadFolders() {
+    showStatus('Loading…');
+    listEl.innerHTML = '';
+    listEl.appendChild(statusEl('Loading…'));
+
+    // Try silent first, then interactive
+    let token = await getToken(false);
+    if (!token) token = await getToken(true);
+
+    if (!token) {
+      showSignIn();
       return;
     }
-    allFolders = result.folders || [];
-    render('');
-  });
 
+    try {
+      const q = encodeURIComponent(
+        "mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false"
+      );
+      const res = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&orderBy=name&pageSize=50`,
+        { headers: { Authorization: 'Bearer ' + token } }
+      );
+      if (res.status === 401) {
+        // Stale token — evict and retry once
+        await new Promise(r => chrome.identity.removeCachedAuthToken({ token }, r));
+        loadFolders();
+        return;
+      }
+      if (!res.ok) throw new Error(`Drive API error (${res.status})`);
+      const data = await res.json();
+      allFolders = data.files || [];
+      render('');
+    } catch (e) {
+      listEl.innerHTML = '';
+      listEl.appendChild(statusEl('Could not load folders: ' + e.message));
+    }
+  }
+
+  function showSignIn() {
+    listEl.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'padding:24px 18px;text-align:center';
+
+    const msg = document.createElement('div');
+    msg.style.cssText = 'font-size:12px;color:#999;margin-bottom:12px';
+    msg.textContent = 'Sign in to Google to pick a folder.';
+
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-ok';
+    btn.style.cssText = 'display:inline-block';
+    btn.textContent = 'Sign in to Google';
+    btn.addEventListener('click', loadFolders);
+
+    wrap.appendChild(msg);
+    wrap.appendChild(btn);
+    listEl.appendChild(wrap);
+  }
+
+  function statusEl(text) {
+    const d = document.createElement('div');
+    d.className = 'status';
+    d.textContent = text;
+    return d;
+  }
+
+  // ── Render folder list ─────────────────────────────────────────
   function render(q) {
     listEl.innerHTML = '';
 
-    // Default option (always first)
+    // Default option always at top
     listEl.appendChild(makeItem('📂', 'AI Chat Exports', 'Default — auto-created by extension', '__default__'));
 
     const divider = document.createElement('div');
@@ -46,15 +111,9 @@ document.addEventListener('DOMContentLoaded', () => {
       : allFolders;
 
     if (allFolders.length === 0) {
-      const s = document.createElement('div');
-      s.className = 'status';
-      s.textContent = 'No folders found in Drive root.';
-      listEl.appendChild(s);
+      listEl.appendChild(statusEl('No folders found in Drive root.'));
     } else if (filtered.length === 0) {
-      const s = document.createElement('div');
-      s.className = 'status';
-      s.textContent = 'No matching folders.';
-      listEl.appendChild(s);
+      listEl.appendChild(statusEl('No matching folders.'));
     } else {
       filtered.forEach(f => listEl.appendChild(makeItem('📁', f.name, '', f.id)));
     }
@@ -99,6 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   qInput.addEventListener('input', () => render(qInput.value.trim()));
 
+  // ── Select / Cancel ────────────────────────────────────────────
   btnOk.addEventListener('click', () => {
     const isDefault = selId === '__default__';
     if (isDefault) {
