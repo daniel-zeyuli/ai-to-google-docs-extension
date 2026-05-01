@@ -772,14 +772,13 @@
 
     // ── Dest row: Drive / Local ──
     const folderName = storageData.customFolderName || 'AI Chat Exports';
-    const folderShort = folderName.length > 18 ? folderName.slice(0, 16) + '…' : folderName;
 
     const destRow = document.createElement('div');
     destRow.className = 'cgd-dest-row';
 
     const btnDrive = document.createElement('button');
     btnDrive.className = 'cgd-dest-btn';
-    btnDrive.textContent = `☁️ ${folderShort}`;
+    btnDrive.textContent = '☁️ Google Drive';
 
     const btnLocal = document.createElement('button');
     btnLocal.className = 'cgd-dest-btn';
@@ -787,6 +786,35 @@
 
     destRow.appendChild(btnDrive);
     destRow.appendChild(btnLocal);
+
+    // ── Folder row (Drive only): shows current folder, click to change ──
+    const folderRow = document.createElement('div');
+    folderRow.className = 'cgd-folder-row cgd-folder-row-pick';
+
+    const folderRowIcon = document.createElement('span');
+    folderRowIcon.textContent = '📁';
+    folderRowIcon.className = 'cgd-folder-row-icon';
+
+    const folderRowName = document.createElement('span');
+    folderRowName.className = 'cgd-folder-row-name';
+    folderRowName.textContent = folderName;
+
+    const folderRowArrow = document.createElement('span');
+    folderRowArrow.className = 'cgd-folder-row-arrow';
+    folderRowArrow.textContent = '›';
+
+    folderRow.appendChild(folderRowIcon);
+    folderRow.appendChild(folderRowName);
+    folderRow.appendChild(folderRowArrow);
+
+    folderRow.addEventListener('click', async () => {
+      const result = await _pickDriveFolder();
+      if (result === 'done') {
+        chrome.storage.local.get('customFolderName', d => {
+          folderRowName.textContent = d.customFolderName || 'AI Chat Exports';
+        });
+      }
+    });
 
     // ── Recent exports row (Drive only, up to 2 chips) ──
     const recentRow = document.createElement('div');
@@ -824,18 +852,16 @@
     function applyDestUI() {
       btnDrive.classList.toggle('cgd-dest-active', exportDest === 'drive');
       btnLocal.classList.toggle('cgd-dest-active', exportDest === 'local');
+      folderRow.style.display = exportDest === 'drive' ? 'flex' : 'none';
       buildRecentChips();
     }
     applyDestUI();
 
-    btnDrive.addEventListener('click', async () => {
+    btnDrive.addEventListener('click', () => {
       exportDest = 'drive';
       chrome.storage.local.set({ exportDest: 'drive' });
       applyDestUI();
       exportBtn.textContent = 'Export to Docs →';
-      // Open folder picker to change destination folder
-      const result = await _pickDriveFolder();
-      if (result === 'done') _refreshDriveBtn(btnDrive);
     });
 
     btnLocal.addEventListener('click', () => {
@@ -980,6 +1006,7 @@
     // ── Assemble ──
     panel.appendChild(header);
     panel.appendChild(destRow);
+    panel.appendChild(folderRow);
     panel.appendChild(recentRow);
     panel.appendChild(actionRow);
     panel.appendChild(pickArea);

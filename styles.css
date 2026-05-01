@@ -120,56 +120,32 @@
 }
 .cgd-panel-close:hover { background: var(--p-btn-bg); color: var(--p-text); }
 
-/* ── Folder row ─────────────────────────────────────────────── */
-.cgd-folder-row {
+/* ── Folder row (shows current Drive folder, click to change) ── */
+.cgd-folder-row-pick {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 7px 16px 6px;
-  border-bottom: 1px solid var(--p-divider);
-  flex-shrink: 0;
-}
-.cgd-folder-label {
-  font-size: 11px;
-  color: var(--p-muted);
-  font-weight: 500;
-}
-.cgd-folder-pick-btn {
-  background: var(--p-btn-bg);
-  border: 1px solid var(--p-divider);
-  border-radius: 6px;
-  padding: 3px 9px;
-  font-size: 11px;
-  color: var(--p-sub);
+  gap: 6px;
+  padding: 4px 10px 7px;
   cursor: pointer;
-  max-width: 190px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  transition: border-color 0.13s, color 0.13s, background 0.13s;
-}
-.cgd-folder-pick-btn:hover { border-color: var(--p-accent); color: var(--p-accent); }
-
-.cgd-folder-drop {
-  border-bottom: 1px solid var(--p-divider);
-  background: var(--p-bg);
-  max-height: 130px;
-  overflow-y: auto;
   flex-shrink: 0;
-}
-.cgd-folder-drop-item {
-  padding: 6px 16px;
-  font-size: 12px;
-  color: var(--p-sub);
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   transition: background 0.1s;
 }
-.cgd-folder-drop-item:hover   { background: var(--p-row-hover); }
-.cgd-folder-drop-active       { color: var(--p-accent); font-weight: 500; }
-.cgd-folder-loading           { color: var(--p-muted); cursor: default; font-style: italic; }
+.cgd-folder-row-pick:hover { background: var(--p-row-hover); }
+.cgd-folder-row-icon { font-size: 13px; flex-shrink: 0; }
+.cgd-folder-row-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--p-sub);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cgd-folder-row-arrow {
+  font-size: 15px;
+  color: var(--p-muted);
+  flex-shrink: 0;
+  line-height: 1;
+}
 
 /* ── Destination toggle row ─────────────────────────────────── */
 .cgd-dest-row {
