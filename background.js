@@ -59,6 +59,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'ensureAuth') {
+    getAuthToken(true)
+      .then(token => sendResponse({ ok: !!token }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
   if (request.action === 'openPickerWindow') {
     chrome.windows.create(
       { url: chrome.runtime.getURL('picker-host.html'), type: 'popup', width: 420, height: 440 },

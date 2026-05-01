@@ -690,19 +690,24 @@
   function _pickDriveFolder() {
     return new Promise((resolve) => {
       chrome.storage.local.remove('pickerState', () => {
-        chrome.runtime.sendMessage({ action: 'openPickerWindow' }, () => {});
-        const handler = (changes) => {
-          if (changes.pickerState) {
+        // Auth must succeed in background first; background's getAuthToken(true)
+        // reliably shows the OAuth UI, unlike calling it from a programmatic window.
+        chrome.runtime.sendMessage({ action: 'ensureAuth' }, (resp) => {
+          if (!resp?.ok) { resolve('cancelled'); return; }
+          chrome.runtime.sendMessage({ action: 'openPickerWindow' }, () => {});
+          const handler = (changes) => {
+            if (changes.pickerState) {
+              chrome.storage.onChanged.removeListener(handler);
+              clearTimeout(tid);
+              resolve(changes.pickerState.newValue);
+            }
+          };
+          chrome.storage.onChanged.addListener(handler);
+          const tid = setTimeout(() => {
             chrome.storage.onChanged.removeListener(handler);
-            clearTimeout(tid);
-            resolve(changes.pickerState.newValue);
-          }
-        };
-        chrome.storage.onChanged.addListener(handler);
-        const tid = setTimeout(() => {
-          chrome.storage.onChanged.removeListener(handler);
-          resolve('timeout');
-        }, 180000);
+            resolve('timeout');
+          }, 180000);
+        });
       });
     });
   }

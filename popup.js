@@ -60,11 +60,13 @@ document.addEventListener('DOMContentLoaded', () => {
     currentDest = 'drive';
     chrome.storage.local.set({ exportDest: 'drive' });
     applyDest();
-    chrome.windows.create({
-      url: chrome.runtime.getURL('picker-host.html'),
-      type: 'popup', width: 420, height: 440
+    // Pre-auth here (popup has user-gesture context) so picker can use cached token
+    chrome.identity.getAuthToken({ interactive: true }, (token) => {
+      if (!chrome.runtime.lastError && token) {
+        chrome.windows.create({ url: chrome.runtime.getURL('picker-host.html'), type: 'popup', width: 420, height: 440 });
+      }
+      window.close();
     });
-    window.close();
   });
 
   // ── Mode tabs ──
