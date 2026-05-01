@@ -120,32 +120,8 @@
 }
 .cgd-panel-close:hover { background: var(--p-btn-bg); color: var(--p-text); }
 
-/* ── Folder row (shows current Drive folder, click to change) ── */
-.cgd-folder-row-pick {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px 7px;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.1s;
-}
-.cgd-folder-row-pick:hover { background: var(--p-row-hover); }
-.cgd-folder-row-icon { font-size: 13px; flex-shrink: 0; }
-.cgd-folder-row-name {
-  flex: 1;
-  font-size: 12px;
-  color: var(--p-sub);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cgd-folder-row-arrow {
-  font-size: 15px;
-  color: var(--p-muted);
-  flex-shrink: 0;
-  line-height: 1;
-}
+/* ── Drive button wider when showing folder name ────────────── */
+.cgd-dest-btn-drive { flex: 2; max-width: 195px; text-align: left; }
 
 /* ── Destination toggle row ─────────────────────────────────── */
 .cgd-dest-row {
@@ -402,20 +378,44 @@
   flex-direction: column;
   gap: 1px;
   flex-shrink: 0;
+  border-bottom: 1px solid var(--p-divider);
 }
 .cgd-recent-chip {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 8px; border-radius: 6px;
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 6px; border-radius: 6px;
   font-size: 11px; color: var(--p-sub);
-  text-decoration: none; transition: background 0.12s;
+  cursor: default; transition: background 0.12s;
   white-space: nowrap; overflow: hidden;
 }
-.cgd-recent-chip:hover { background: var(--p-accent-bg); color: var(--p-accent); }
+.cgd-recent-chip:hover { background: var(--p-row-hover); }
 .cgd-rc-icon  { font-size: 10px; color: var(--p-muted); flex-shrink: 0; }
-.cgd-rc-name  { flex: 1; overflow: hidden; text-overflow: ellipsis; }
-.cgd-rc-arrow { font-size: 9px; color: var(--p-faint); flex-shrink: 0; }
-.cgd-recent-chip:hover .cgd-rc-icon,
-.cgd-recent-chip:hover .cgd-rc-arrow { color: var(--p-accent); }
+.cgd-rc-name  { flex: 1; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.cgd-rc-ts    { font-size: 10px; color: var(--p-muted); flex-shrink: 0; margin-right: 1px; }
+/* Action buttons — hidden by default, fade in on chip hover */
+.cgd-rc-actions { display: flex; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity 0.15s; }
+.cgd-recent-chip:hover .cgd-rc-actions { opacity: 1; }
+.cgd-rc-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 11px; color: var(--p-muted); padding: 1px 4px;
+  border-radius: 4px; line-height: 1; text-decoration: none;
+  display: inline-flex; align-items: center;
+  transition: background 0.1s, color 0.1s;
+}
+.cgd-rc-btn:hover { background: var(--p-accent-bg); color: var(--p-accent); }
+
+/* ── Path confirmation row (below export buttons) ────────────── */
+.cgd-path-row {
+  padding: 4px 12px 8px;
+  flex-shrink: 0;
+}
+.cgd-path-row span {
+  font-size: 10px;
+  color: var(--p-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
 
 /* ── CSV button ──────────────────────────────────────────────── */
 .cgd-csv-btn {

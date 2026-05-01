@@ -46,6 +46,23 @@
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  function _formatRelativeTime(ts) {
+    if (!ts) return '';
+    const diff = Date.now() - ts;
+    const mins  = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days  = Math.floor(diff / 86400000);
+    if (mins < 2)   return 'just now';
+    if (hours < 1)  return `${mins}m ago`;
+    const now = new Date(), then = new Date(ts);
+    if (now.toDateString() === then.toDateString()) return '';
+    const yest = new Date(now); yest.setDate(now.getDate() - 1);
+    if (yest.toDateString() === then.toDateString()) return 'yesterday';
+    if (days < 8)   return `${days}d ago`;
+    if (days < 30)  return `${Math.floor(days / 7)}w ago`;
+    return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
   function showToast(message, isError = false, duration = 4000) {
     const existing = document.querySelector('.' + BANNER_CLASS);
     if (existing) existing.remove();
@@ -473,7 +490,7 @@
         chrome.storage.local.get('lastExports', (d) => {
           const allExports = d.lastExports || {};
           const history = Array.isArray(allExports[convKey]) ? allExports[convKey] : (allExports[convKey] ? [allExports[convKey]] : []);
-          const newEntry = { fileName: result.fileName, url: result.url, fileId: result.fileId };
+          const newEntry = { fileName: result.fileName, url: result.url, fileId: result.fileId, exportedAt: Date.now() };
           const filtered = history.filter(e => e.fileId !== newEntry.fileId);
           allExports[convKey] = [newEntry, ...filtered].slice(0, 3);
           chrome.storage.local.set({ lastExports: allExports });
@@ -712,11 +729,15 @@
     });
   }
 
-  function _refreshDriveBtn(btn) {
-    chrome.storage.local.get('customFolderName', (d) => {
-      const n = d.customFolderName || 'AI Chat Exports';
-      const s = n.length > 18 ? n.slice(0, 16) + '…' : n;
-      btn.textContent = `☁️ ${s}`;
+  function _appendToRecent(exp) {
+    if (!exp.fileId) return;
+    const el = getLastAIMessage();
+    if (!el) { showToast('❌ No AI response found', true); return; }
+    showToast('⏳ Appending…');
+    const text = extractMarkdown(el);
+    chrome.runtime.sendMessage({ action: 'appendToDoc', fileId: exp.fileId, text }, (resp) => {
+      if (resp?.success) showToast(`✅ Appended to "<b>${escHtml(exp.fileName)}</b>"`, false, 4000);
+      else showToast('❌ Append failed: ' + (resp?.error || ''), true);
     });
   }
 
@@ -770,53 +791,37 @@
       e.preventDefault();
     });
 
-    // ── Dest row: Drive / Local ──
-    const folderName = storageData.customFolderName || 'AI Chat Exports';
-
+    // ── Dest row: Drive (shows folder name) / Local ──
     const destRow = document.createElement('div');
     destRow.className = 'cgd-dest-row';
 
     const btnDrive = document.createElement('button');
-    btnDrive.className = 'cgd-dest-btn';
-    btnDrive.textContent = '☁️ Google Drive';
+    btnDrive.className = 'cgd-dest-btn cgd-dest-btn-drive';
+
+    // Drive button shows current folder name; updates after picker
+    function _updateDriveBtnLabel() {
+      chrome.storage.local.get('customFolderName', d => {
+        const n = d.customFolderName || 'AI Chat Exports';
+        const s = n.length > 20 ? n.slice(0, 18) + '…' : n;
+        btnDrive.textContent = `☁️ ${s}  ›`;
+      });
+    }
+    _updateDriveBtnLabel();
 
     const btnLocal = document.createElement('button');
     btnLocal.className = 'cgd-dest-btn';
-    btnLocal.textContent = '💾 Local .docx';
+    btnLocal.textContent = '💾 Local';
 
     destRow.appendChild(btnDrive);
     destRow.appendChild(btnLocal);
 
-    // ── Folder row (Drive only): shows current folder, click to change ──
-    const folderRow = document.createElement('div');
-    folderRow.className = 'cgd-folder-row cgd-folder-row-pick';
+    // ── Path confirmation row (below export buttons — created here, appended after actionRow) ──
+    const pathRow = document.createElement('div');
+    pathRow.className = 'cgd-path-row';
+    const pathRowText = document.createElement('span');
+    pathRow.appendChild(pathRowText);
 
-    const folderRowIcon = document.createElement('span');
-    folderRowIcon.textContent = '📁';
-    folderRowIcon.className = 'cgd-folder-row-icon';
-
-    const folderRowName = document.createElement('span');
-    folderRowName.className = 'cgd-folder-row-name';
-    folderRowName.textContent = folderName;
-
-    const folderRowArrow = document.createElement('span');
-    folderRowArrow.className = 'cgd-folder-row-arrow';
-    folderRowArrow.textContent = '›';
-
-    folderRow.appendChild(folderRowIcon);
-    folderRow.appendChild(folderRowName);
-    folderRow.appendChild(folderRowArrow);
-
-    folderRow.addEventListener('click', async () => {
-      const result = await _pickDriveFolder();
-      if (result === 'done') {
-        chrome.storage.local.get('customFolderName', d => {
-          folderRowName.textContent = d.customFolderName || 'AI Chat Exports';
-        });
-      }
-    });
-
-    // ── Recent exports row (Drive only, up to 2 chips) ──
+    // ── Recent exports (Drive only, up to 2 chips with hover-reveal actions) ──
     const recentRow = document.createElement('div');
     recentRow.className = 'cgd-recent-row';
 
@@ -836,14 +841,48 @@
       }
       recentRow.style.display = 'flex';
       recents.forEach(exp => {
-        const chip = document.createElement('a');
+        const chip = document.createElement('div');
         chip.className = 'cgd-recent-chip';
-        chip.href = exp.url || `https://docs.google.com/document/d/${exp.fileId}/edit`;
-        chip.target = '_blank';
-        const name = exp.fileName || 'Untitled';
-        const short = name.length > 28 ? name.slice(0, 26) + '…' : name;
-        chip.innerHTML = `<span class="cgd-rc-icon">↩</span><span class="cgd-rc-name">${short}</span><span class="cgd-rc-arrow">↗</span>`;
-        chip.title = name;
+
+        const icon = document.createElement('span');
+        icon.className = 'cgd-rc-icon';
+        icon.textContent = '↩';
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'cgd-rc-name';
+        const fn = exp.fileName || 'Untitled';
+        nameEl.textContent = fn.length > 24 ? fn.slice(0, 22) + '…' : fn;
+        nameEl.title = fn;
+
+        const tsEl = document.createElement('span');
+        tsEl.className = 'cgd-rc-ts';
+        tsEl.textContent = _formatRelativeTime(exp.exportedAt);
+
+        // Action buttons — fade in on hover via CSS
+        const actions = document.createElement('span');
+        actions.className = 'cgd-rc-actions';
+
+        const appendBtn = document.createElement('button');
+        appendBtn.className = 'cgd-rc-btn';
+        appendBtn.textContent = '+↩';
+        const isSameConv = convHistory.some(e => e.fileId === exp.fileId);
+        appendBtn.title = isSameConv ? 'Continue this document' : 'Append last response to this doc';
+        appendBtn.addEventListener('click', (e) => { e.stopPropagation(); _appendToRecent(exp); });
+
+        const openBtn = document.createElement('a');
+        openBtn.className = 'cgd-rc-btn';
+        openBtn.href = exp.url || `https://docs.google.com/document/d/${exp.fileId}/edit`;
+        openBtn.target = '_blank';
+        openBtn.textContent = '↗';
+        openBtn.title = 'Open in Drive';
+        openBtn.addEventListener('click', e => e.stopPropagation());
+
+        actions.appendChild(appendBtn);
+        actions.appendChild(openBtn);
+        chip.appendChild(icon);
+        chip.appendChild(nameEl);
+        chip.appendChild(tsEl);
+        chip.appendChild(actions);
         recentRow.appendChild(chip);
       });
     }
@@ -852,16 +891,31 @@
     function applyDestUI() {
       btnDrive.classList.toggle('cgd-dest-active', exportDest === 'drive');
       btnLocal.classList.toggle('cgd-dest-active', exportDest === 'local');
-      folderRow.style.display = exportDest === 'drive' ? 'flex' : 'none';
       buildRecentChips();
+      // Update path confirmation row
+      if (exportDest === 'drive') {
+        chrome.storage.local.get('customFolderName', d => {
+          pathRowText.textContent = '📁 ' + (d.customFolderName || 'AI Chat Exports');
+        });
+      } else {
+        pathRowText.textContent = '💾 Save as local .docx';
+      }
     }
     applyDestUI();
 
-    btnDrive.addEventListener('click', () => {
-      exportDest = 'drive';
-      chrome.storage.local.set({ exportDest: 'drive' });
-      applyDestUI();
-      exportBtn.textContent = 'Export to Docs →';
+    btnDrive.addEventListener('click', async () => {
+      if (exportDest === 'drive') {
+        // Already on Drive → open picker to change folder
+        const result = await _pickDriveFolder();
+        if (result === 'done') { _updateDriveBtnLabel(); applyDestUI(); }
+      } else {
+        // Switch from Local to Drive (no picker — just switch)
+        exportDest = 'drive';
+        chrome.storage.local.set({ exportDest: 'drive' });
+        _updateDriveBtnLabel();
+        applyDestUI();
+        exportBtn.textContent = 'Export to Docs →';
+      }
     });
 
     btnLocal.addEventListener('click', () => {
@@ -1006,9 +1060,9 @@
     // ── Assemble ──
     panel.appendChild(header);
     panel.appendChild(destRow);
-    panel.appendChild(folderRow);
     panel.appendChild(recentRow);
     panel.appendChild(actionRow);
+    panel.appendChild(pathRow);
     panel.appendChild(pickArea);
 
     // ── Shared logic ──
