@@ -1225,20 +1225,16 @@
   }
 
   function _updateExportBtnContent(btn) {
-    chrome.storage.local.get('customFolderName', (d) => {
-      const folderName = d.customFolderName || 'AI Chat Exports';
-      const pathSpan  = btn.querySelector('.cgd-btn-path');
-      const labelSpan = btn.querySelector('.cgd-btn-label');
-      if (!pathSpan || !labelSpan) return;
-      if (exportDest === 'local') {
-        pathSpan.textContent = '💾 Local';
-        labelSpan.textContent = 'Save .docx';
-      } else {
-        const short = folderName.length > 18 ? folderName.slice(0, 16) + '…' : folderName;
-        pathSpan.textContent = `☁️ ${short}`;
-        labelSpan.textContent = 'Export to Docs';
-      }
-    });
+    const pathSpan  = btn.querySelector('.cgd-btn-path');
+    const labelSpan = btn.querySelector('.cgd-btn-label');
+    if (!pathSpan || !labelSpan) return;
+    if (exportDest === 'local') {
+      pathSpan.textContent = '💾 Local';
+    } else {
+      pathSpan.textContent = '☁️ Google Drive';
+    }
+    labelSpan.textContent = '';
+    labelSpan.style.display = 'none';
   }
 
   function createExportButton() {
