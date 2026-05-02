@@ -62,10 +62,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const top  = Math.max(by, by + Math.floor((bh - H) / 2));
     chrome.windows.create(
       { url: chrome.runtime.getURL('picker-host.html'), type: 'popup', width: W, height: H, left, top },
-      () => sendResponse({ ok: true })
+      (win) => {
+        if (win) _pickerWindowId = win.id;
+        sendResponse({ ok: true });
+      }
     );
     return true;
   }
+});
+
+// ── Detect picker window closed via OS ✕ (more reliable than beforeunload async write) ──
+let _pickerWindowId = null;
+chrome.windows.onRemoved.addListener((windowId) => {
+  if (windowId !== _pickerWindowId) return;
+  _pickerWindowId = null;
+  // Only write 'cancelled' if pickerState wasn't already set by the picker itself.
+  // content.js removes its storage.onChanged listener on first change, so a late
+  // 'cancelled' after 'done' is harmless — but avoid clobbering 'done' unnecessarily.
+  chrome.storage.local.get('pickerState', (d) => {
+    if (!d.pickerState) chrome.storage.local.set({ pickerState: 'cancelled' });
+  });
 });
 
 // ── Keyboard shortcut: forward to active tab's content script ──

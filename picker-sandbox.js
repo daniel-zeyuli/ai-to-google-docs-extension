@@ -1,33 +1,32 @@
 // Sandboxed page — cannot use chrome.* APIs.
 // Communicates with picker-host.html via postMessage only.
 
-var _pendingToken = null;
-
-function gapiLoadError() {
-  document.getElementById('err').style.display = 'block';
-  document.getElementById('err').textContent = 'Could not load Google Picker.\nCheck your internet connection.';
+// api.js loads before this script (HTML order). If it failed, gapi is undefined.
+if (typeof gapi === 'undefined') {
   window.parent.postMessage({ type: 'picker-load-error' }, '*');
+} else {
+  window.parent.postMessage({ type: 'picker-ready' }, '*');
 }
-
-// Signal ready once this script runs (api.js already loaded above it in HTML)
-window.parent.postMessage({ type: 'picker-ready' }, '*');
 
 window.addEventListener('message', function(e) {
   if (!e.data) return;
-  if (e.data.type === 'show-picker') {
-    _pendingToken = e.data.token;
-    openPicker(_pendingToken);
-  }
+  if (e.data.type === 'show-picker') openPicker(e.data.token);
 });
 
 function openPicker(token) {
+  if (typeof gapi === 'undefined') {
+    window.parent.postMessage({ type: 'picker-load-error' }, '*');
+    return;
+  }
   gapi.load('picker', function() {
     var folderView = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
       .setSelectFolderEnabled(true)
-      .setIncludeFolders(true);
+      .setIncludeFolders(true)
+      .setMode(google.picker.DocsViewMode.LIST);
 
     var picker = new google.picker.PickerBuilder()
       .setOAuthToken(token)
+      .setDeveloperKey('AIzaSyCGZjDDRW6e6ogByzjwduNYC3XiQVBEpjY')
       .addView(folderView)
       .setTitle('Choose export folder')
       .setCallback(function(data) {
