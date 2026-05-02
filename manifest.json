@@ -8,9 +8,6 @@
     "storage",
     "downloads"
   ],
-  "sandbox": {
-    "pages": ["picker.html"]
-  },
   "host_permissions": [
     "https://www.googleapis.com/*",
     "https://docs.googleapis.com/*"

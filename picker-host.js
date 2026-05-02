@@ -316,4 +316,13 @@ document.addEventListener('DOMContentLoaded', () => {
   btnCancel.addEventListener('click', () =>
     chrome.storage.local.set({ pickerState: 'cancelled' }, () => window.close())
   );
+
+  // If user closes the window via the OS ✕ button (no Cancel click), still signal cancelled
+  // so _pickDriveFolder doesn't hang waiting for the 2-minute timeout.
+  let _pickerDone = false;
+  btnOk.addEventListener('click', () => { _pickerDone = true; }, true);
+  btnCancel.addEventListener('click', () => { _pickerDone = true; }, true);
+  window.addEventListener('beforeunload', () => {
+    if (!_pickerDone) chrome.storage.local.set({ pickerState: 'cancelled' });
+  });
 });

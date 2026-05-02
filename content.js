@@ -727,7 +727,7 @@
           const tid = setTimeout(() => {
             chrome.storage.onChanged.removeListener(handler);
             resolve('timeout');
-          }, 180000);
+          }, 120000);
         });
       });
     });
@@ -956,8 +956,20 @@
     btnDrive.addEventListener('click', async () => {
       if (exportDest === 'drive') {
         // Already on Drive → open picker to change folder
+        const prevText = btnDrive.textContent;
+        btnDrive.textContent = '⏳ Opening…';
+        btnDrive.disabled = true;
         const result = await _pickDriveFolder();
-        if (result === 'done') { _updateDriveBtnLabel(); applyDestUI(); }
+        btnDrive.disabled = false;
+        if (result === 'done') {
+          _updateDriveBtnLabel();
+          applyDestUI();
+        } else if (result === 'timeout') {
+          btnDrive.textContent = prevText;
+          showToast('⚠️ Folder picker timed out. Please try again.', true, 4000);
+        } else {
+          btnDrive.textContent = prevText; // cancelled — restore label
+        }
       } else {
         // Switch from Local to Drive (no picker — just switch)
         exportDest = 'drive';

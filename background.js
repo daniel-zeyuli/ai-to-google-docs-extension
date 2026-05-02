@@ -25,24 +25,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  if (request.action === 'listFolders') {
-    listDriveFolders()
-      .then(result => sendResponse(result))
-      .catch(err => sendResponse({ success: false, error: err.message }));
-    return true;
-  }
-
   if (request.action === 'fetchImage') {
     fetchImageAsBase64(request.url)
       .then(result => sendResponse(result))
       .catch(() => sendResponse({ success: false }));
-    return true;
-  }
-
-  if (request.action === 'getPickerToken') {
-    getAuthToken(true)
-      .then(token => sendResponse({ token }))
-      .catch(() => sendResponse({ token: null }));
     return true;
   }
 
@@ -107,23 +93,6 @@ function removeCachedToken(token) {
   return new Promise((resolve) => {
     chrome.identity.removeCachedAuthToken({ token }, resolve);
   });
-}
-
-// ── List top-level Drive folders ──
-async function listDriveFolders() {
-  let token;
-  try { token = await getAuthToken(true); }
-  catch (e) { return { success: false, error: 'Not signed in' }; }
-  if (!token) return { success: false, error: 'Not signed in' };
-
-  const q = encodeURIComponent("mimeType='application/vnd.google-apps.folder' and trashed=false");
-  const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&orderBy=name&pageSize=100`,
-    { headers: { 'Authorization': 'Bearer ' + token } }
-  );
-  if (!res.ok) return { success: false, error: 'Drive API error' };
-  const data = await res.json();
-  return { success: true, folders: data.files || [] };
 }
 
 // ── Fetch image via background worker (bypasses content script CORS) ──
