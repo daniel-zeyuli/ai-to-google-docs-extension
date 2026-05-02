@@ -1,23 +1,27 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const listEl    = document.getElementById('list');
-  const qInput    = document.getElementById('q');
-  const btnOk     = document.getElementById('btnOk');
-  const btnCancel = document.getElementById('btnCancel');
-  const newArea   = document.getElementById('newArea');
-  const newInput  = document.getElementById('newInput');
-  const btnCreate = document.getElementById('btnCreate');
+  const listEl         = document.getElementById('list');
+  const qInput         = document.getElementById('q');
+  const btnOk          = document.getElementById('btnOk');
+  const btnCancel      = document.getElementById('btnCancel');
+  const newArea        = document.getElementById('newArea');
+  const newInput       = document.getElementById('newInput');
+  const btnCreate      = document.getElementById('btnCreate');
+  const breadcrumb     = document.getElementById('breadcrumb');
+  const breadcrumbPath = document.getElementById('breadcrumbPath');
+  const btnBack        = document.getElementById('btnBack');
 
   const TAB_QUERIES = {
     recent:  { q: "mimeType='application/vnd.google-apps.folder' and trashed=false", orderBy: 'viewedByMeTime desc,name' },
     starred: { q: "mimeType='application/vnd.google-apps.folder' and starred=true and trashed=false", orderBy: 'name' },
-    all:     { q: "mimeType='application/vnd.google-apps.folder' and trashed=false", orderBy: 'name' }
   };
 
-  let tabFolders = { recent: null, starred: null, all: null };
-  let activeTab  = 'recent';
-  let selId   = '__default__';
-  let selName = 'AI Chat Exports';
-  let token   = null;
+  let tabFolders     = { recent: null, starred: null };
+  let activeTab      = 'recent';
+  let selId          = '__default__';
+  let selName        = 'AI Chat Exports';
+  let token          = null;
+  let navStack       = [{ id: 'root', name: 'My Drive' }];
+  let allFolderCache = {};  // { parentId: [folders] }
 
   chrome.storage.local.get(['customFolderId', 'customFolderName'], (d) => {
     if (d.customFolderId) { selId = d.customFolderId; selName = d.customFolderName || ''; }
@@ -31,15 +35,52 @@ document.addEventListener('DOMContentLoaded', () => {
       activeTab = btn.dataset.tab;
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === btn));
       qInput.value = '';
-      if (tabFolders[activeTab] !== null) {
-        render(tabFolders[activeTab], '');
+
+      if (activeTab === 'all') {
+        navStack = [{ id: 'root', name: 'My Drive' }];
+        updateBreadcrumb();
+        const parentId = navStack[0].id;
+        if (allFolderCache[parentId]) {
+          renderAll(allFolderCache[parentId], '');
+        } else {
+          loadAllFolders(parentId);
+        }
       } else {
-        loadTab(activeTab);
+        breadcrumb.classList.remove('visible');
+        if (tabFolders[activeTab] !== null) {
+          render(tabFolders[activeTab], '');
+        } else {
+          loadTab(activeTab);
+        }
       }
     });
   });
 
-  // ── Auth: pre-auth done by background before this window opened ──
+  // ── Back button (All folders tab) ──
+  btnBack.addEventListener('click', () => {
+    if (navStack.length > 1) {
+      navStack.pop();
+      updateBreadcrumb();
+      qInput.value = '';
+      const parentId = navStack[navStack.length - 1].id;
+      if (allFolderCache[parentId]) {
+        renderAll(allFolderCache[parentId], '');
+      } else {
+        loadAllFolders(parentId);
+      }
+    }
+  });
+
+  function updateBreadcrumb() {
+    if (activeTab !== 'all' || navStack.length <= 1) {
+      breadcrumb.classList.remove('visible');
+      return;
+    }
+    breadcrumb.classList.add('visible');
+    breadcrumbPath.textContent = navStack.map(n => n.name).join(' / ');
+  }
+
+  // ── Auth ──
   async function getCachedToken() {
     return new Promise((resolve) => {
       chrome.identity.getAuthToken({ interactive: false }, (t) => {
@@ -51,10 +92,8 @@ document.addEventListener('DOMContentLoaded', () => {
   async function loadTab(tab) {
     setStatus('Loading…');
     if (!token) token = await getCachedToken();
-    if (!token) {
-      setStatus('Not signed in. Close this window and try again.');
-      return;
-    }
+    if (!token) { setStatus('Not signed in. Close this window and try again.'); return; }
+
     const { q, orderBy } = TAB_QUERIES[tab];
     try {
       const url = `https://www.googleapis.com/drive/v3/files` +
@@ -75,32 +114,83 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  async function loadAllFolders(parentId) {
+    setStatus('Loading…');
+    if (!token) token = await getCachedToken();
+    if (!token) { setStatus('Not signed in. Close this window and try again.'); return; }
+
+    const parentFilter = parentId === 'root' ? `'root' in parents` : `'${parentId}' in parents`;
+    const q = `${parentFilter} and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+
+    try {
+      const url = `https://www.googleapis.com/drive/v3/files` +
+        `?q=${encodeURIComponent(q)}&fields=files(id,name)&orderBy=name&pageSize=100`;
+      const res = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+      if (res.status === 401) {
+        await new Promise(r => chrome.identity.removeCachedAuthToken({ token }, r));
+        token = null;
+        setStatus('Session expired. Close this window and try again.');
+        return;
+      }
+      if (!res.ok) throw new Error(`Drive API error ${res.status}`);
+      const data = await res.json();
+      allFolderCache[parentId] = data.files || [];
+      renderAll(allFolderCache[parentId], qInput.value.trim());
+    } catch (e) {
+      setStatus('Error: ' + e.message);
+    }
+  }
+
   function setStatus(text) {
     listEl.innerHTML = `<div class="status">${text}</div>`;
   }
 
-  // ── Folder list ──
+  // ── Flat render: Recent / Starred tabs ──
   function render(folders, q) {
     listEl.innerHTML = '';
-    // Default option always pinned at top
-    listEl.appendChild(makeItem('📂', 'AI Chat Exports', 'Default — auto-created by extension', '__default__'));
+    listEl.appendChild(makeItem('📂', 'AI Chat Exports', 'Default — auto-created by extension', '__default__', false));
     const hr = document.createElement('div'); hr.className = 'divider'; listEl.appendChild(hr);
 
     const hits = q ? folders.filter(f => f.name.toLowerCase().includes(q.toLowerCase())) : folders;
     if (folders.length === 0) {
-      listEl.appendChild(mkStatus(activeTab === 'starred' ? 'No starred folders.' : 'No folders found.'));
+      const msg = activeTab === 'starred'
+        ? 'Star folders in Google Drive to see them here.'
+        : 'No folders found.';
+      listEl.appendChild(mkStatus(msg));
     } else if (hits.length === 0) {
       listEl.appendChild(mkStatus('No matching folders.'));
     } else {
-      hits.forEach(f => listEl.appendChild(makeItem('📁', f.name, '', f.id)));
+      hits.forEach(f => listEl.appendChild(makeItem('📁', f.name, '', f.id, false)));
+    }
+  }
+
+  // ── Hierarchical render: All folders tab ──
+  function renderAll(folders, q) {
+    listEl.innerHTML = '';
+
+    if (navStack.length === 1) {
+      listEl.appendChild(makeItem('📂', 'AI Chat Exports', 'Default — auto-created by extension', '__default__', false));
+      const hr = document.createElement('div'); hr.className = 'divider'; listEl.appendChild(hr);
+    }
+
+    const hits = q ? folders.filter(f => f.name.toLowerCase().includes(q.toLowerCase())) : folders;
+    if (folders.length === 0) {
+      listEl.appendChild(mkStatus(navStack.length === 1 ? 'No folders in My Drive.' : 'No subfolders here.'));
+    } else if (hits.length === 0) {
+      listEl.appendChild(mkStatus('No matching folders.'));
+    } else {
+      hits.forEach(f => listEl.appendChild(makeItem('📁', f.name, '', f.id, true)));
     }
   }
 
   function mkStatus(text) {
-    const d = document.createElement('div'); d.className = 'status'; d.textContent = text; return d;
+    const d = document.createElement('div');
+    d.className = 'status';
+    d.textContent = text;
+    return d;
   }
 
-  function makeItem(icon, name, sub, id) {
+  function makeItem(icon, name, sub, id, showNavArrow) {
     const div = document.createElement('div');
     div.className = 'item' + (selId === id ? ' sel' : '');
 
@@ -108,21 +198,53 @@ document.addEventListener('DOMContentLoaded', () => {
     const body = document.createElement('div'); body.className = 'item-body';
     const nm = document.createElement('div'); nm.className = 'item-name'; nm.textContent = name;
     body.appendChild(nm);
-    if (sub) { const sb = document.createElement('div'); sb.className = 'item-sub'; sb.textContent = sub; body.appendChild(sb); }
-    div.appendChild(ic); div.appendChild(body);
+    if (sub) {
+      const sb = document.createElement('div'); sb.className = 'item-sub'; sb.textContent = sub;
+      body.appendChild(sb);
+    }
+    div.appendChild(ic);
+    div.appendChild(body);
 
-    div.addEventListener('click', () => {
+    div.addEventListener('click', (e) => {
+      if (e.target.closest('.nav-arrow')) return;
       selId = id; selName = name;
       listEl.querySelectorAll('.item').forEach(el => el.classList.remove('sel'));
       div.classList.add('sel');
       btnOk.disabled = false;
     });
+
+    if (showNavArrow && id !== '__default__') {
+      const arrow = document.createElement('button');
+      arrow.className = 'nav-arrow';
+      arrow.textContent = '›';
+      arrow.title = `Open ${name}`;
+      arrow.addEventListener('click', (e) => {
+        e.stopPropagation();
+        navStack.push({ id, name });
+        updateBreadcrumb();
+        qInput.value = '';
+        if (allFolderCache[id]) {
+          renderAll(allFolderCache[id], '');
+        } else {
+          loadAllFolders(id);
+        }
+      });
+      div.appendChild(arrow);
+    }
+
     return div;
   }
 
   qInput.addEventListener('input', () => {
-    const folders = tabFolders[activeTab];
-    if (folders !== null) render(folders, qInput.value.trim());
+    const q = qInput.value.trim();
+    if (activeTab === 'all') {
+      const parentId = navStack[navStack.length - 1].id;
+      const folders = allFolderCache[parentId];
+      if (folders !== undefined) renderAll(folders, q);
+    } else {
+      const folders = tabFolders[activeTab];
+      if (folders !== null) render(folders, q);
+    }
   });
 
   // ── New folder ──
@@ -141,20 +263,38 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCreate.disabled = true; btnCreate.textContent = 'Creating…';
     try {
       if (!token) token = await getCachedToken();
+
+      const body = { name, mimeType: 'application/vnd.google-apps.folder' };
+      // If drilled into a subfolder in All tab, create inside it
+      if (activeTab === 'all' && navStack.length > 1) {
+        body.parents = [navStack[navStack.length - 1].id];
+      }
+
       const res = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,name', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder' })
+        body: JSON.stringify(body)
       });
       if (!res.ok) throw new Error(`Drive API error ${res.status}`);
       const folder = await res.json();
-      // Insert into all cached tabs
-      ['recent', 'all'].forEach(tab => {
-        if (tabFolders[tab]) tabFolders[tab] = [folder, ...tabFolders[tab]];
-      });
+
+      // Prepend into relevant caches
+      const allCacheKey = navStack[navStack.length - 1].id;
+      if (activeTab === 'all') {
+        if (allFolderCache[allCacheKey]) allFolderCache[allCacheKey] = [folder, ...allFolderCache[allCacheKey]];
+        if (tabFolders.recent) tabFolders.recent = [folder, ...tabFolders.recent];
+      } else {
+        if (tabFolders.recent) tabFolders.recent = [folder, ...tabFolders.recent];
+      }
+
       selId = folder.id; selName = folder.name;
       newInput.value = ''; newArea.style.display = 'none';
-      render(tabFolders[activeTab] || [folder], qInput.value.trim());
+
+      if (activeTab === 'all') {
+        renderAll(allFolderCache[allCacheKey] || [folder], qInput.value.trim());
+      } else {
+        render(tabFolders[activeTab] || [folder], qInput.value.trim());
+      }
       btnOk.disabled = false;
     } catch (e) {
       alert('Could not create folder: ' + e.message);

@@ -741,7 +741,47 @@
     });
   }
 
-  function showSelectPanel(thisMessageEl) {
+  function _appendFullToDoc(exp) {
+    if (!exp.fileId) return;
+    const msgs = getAllAIMessages();
+    if (!msgs.length) { showToast('❌ No AI responses found', true); return; }
+    showToast('⏳ Appending full conversation…');
+    const parts = msgs.map((el, i) => {
+      const t = extractMarkdown(el).trim();
+      return t ? `## Response ${i + 1}\n\n${t}` : '';
+    }).filter(Boolean);
+    chrome.runtime.sendMessage({ action: 'appendToDoc', fileId: exp.fileId, text: parts.join('\n\n---\n\n') }, (resp) => {
+      if (resp?.success) showToast(`✅ Appended to "<b>${escHtml(exp.fileName)}</b>"`, false, 4000);
+      else showToast('❌ Append failed: ' + (resp?.error || ''), true);
+    });
+  }
+
+  function _showAppendDropdown(anchor, exp) {
+    document.querySelector('.cgd-append-drop')?.remove();
+    const drop = document.createElement('div');
+    drop.className = 'cgd-append-drop';
+    const items = [
+      { text: '↩ Last response', fn: () => _appendToRecent(exp) },
+      { text: '≡ Full conversation', fn: () => _appendFullToDoc(exp) },
+      { text: '☑ Pick responses', fn: () => showSelectPanel(null, exp) }
+    ];
+    items.forEach(({ text, fn }) => {
+      const btn = document.createElement('button');
+      btn.className = 'cgd-append-drop-item';
+      btn.textContent = text;
+      btn.addEventListener('click', (e) => { e.stopPropagation(); drop.remove(); fn(); });
+      drop.appendChild(btn);
+    });
+    const rect = anchor.getBoundingClientRect();
+    drop.style.cssText = `position:fixed;bottom:${window.innerHeight - rect.top + 4}px;left:${rect.left}px;z-index:100001;`;
+    document.body.appendChild(drop);
+    setTimeout(() => {
+      const handler = (e) => { if (!drop.contains(e.target)) { drop.remove(); document.removeEventListener('click', handler); } };
+      document.addEventListener('click', handler);
+    }, 0);
+  }
+
+  function showSelectPanel(thisMessageEl, appendTarget = null) {
     const existing = document.querySelector('.cgd-panel');
     if (existing) { existing.remove(); return; }
 
@@ -749,11 +789,11 @@
     if (messages.length === 0) { showToast('❌ No AI responses found', true); return; }
 
     chrome.storage.local.get(['customFolderName', 'lastExports', 'globalRecentDocs'], (storageData) => {
-      _buildSelectPanel(messages, thisMessageEl, storageData);
+      _buildSelectPanel(messages, thisMessageEl, storageData, appendTarget);
     });
   }
 
-  function _buildSelectPanel(messages, thisMessageEl, storageData = {}) {
+  function _buildSelectPanel(messages, thisMessageEl, storageData = {}, appendTarget = null) {
     const platform = isGemini ? 'Gemini' : isClaude ? 'Claude' : 'ChatGPT';
     const dark = isDarkMode();
 
@@ -767,7 +807,10 @@
     // ── Header ──
     const header = document.createElement('div');
     header.className = 'cgd-panel-header';
-    header.innerHTML = `<span class="cgd-panel-title">Export · ${platform}</span><button class="cgd-panel-close" title="Close">✕</button>`;
+    const headerTitle = appendTarget
+      ? `Append · ${platform}`
+      : `Export · ${platform}`;
+    header.innerHTML = `<span class="cgd-panel-title">${headerTitle}</span><button class="cgd-panel-close" title="Close">✕</button>`;
 
     header.addEventListener('mousedown', (e) => {
       if (e.target.closest('.cgd-panel-close')) return;
@@ -867,7 +910,7 @@
         appendBtn.textContent = '+↩';
         const isSameConv = convHistory.some(e => e.fileId === exp.fileId);
         appendBtn.title = isSameConv ? 'Continue this document' : 'Append last response to this doc';
-        appendBtn.addEventListener('click', (e) => { e.stopPropagation(); _appendToRecent(exp); });
+        appendBtn.addEventListener('click', (e) => { e.stopPropagation(); _showAppendDropdown(appendBtn, exp); });
 
         const openBtn = document.createElement('a');
         openBtn.className = 'cgd-rc-btn';
@@ -895,10 +938,10 @@
       // Update path confirmation row
       if (exportDest === 'drive') {
         chrome.storage.local.get('customFolderName', d => {
-          pathRowText.textContent = '📁 ' + (d.customFolderName || 'AI Chat Exports');
+          pathRowText.textContent = 'Saving to: 📁 ' + (d.customFolderName || 'AI Chat Exports');
         });
       } else {
-        pathRowText.textContent = '💾 Save as local .docx';
+        pathRowText.textContent = 'Saving to: 💾 local .docx';
       }
     }
     applyDestUI();
@@ -1047,7 +1090,12 @@
 
     const exportBtn = document.createElement('button');
     exportBtn.className = 'cgd-export-sel-btn';
-    exportBtn.textContent = exportDest === 'local' ? 'Save .docx →' : 'Export to Docs →';
+    if (appendTarget) {
+      const shortName = (appendTarget.fileName || '').length > 20 ? appendTarget.fileName.slice(0, 18) + '…' : (appendTarget.fileName || 'doc');
+      exportBtn.textContent = `Append to "${shortName}" →`;
+    } else {
+      exportBtn.textContent = exportDest === 'local' ? 'Save .docx →' : 'Export to Docs →';
+    }
 
     footerMain.appendChild(countLabel);
     footerMain.appendChild(exportBtn);
@@ -1057,13 +1105,18 @@
     pickArea.appendChild(list);
     pickArea.appendChild(footer);
 
-    // ── Assemble ──
+    // ── Assemble: skip dest/recent/path rows in append mode ──
     panel.appendChild(header);
-    panel.appendChild(destRow);
-    panel.appendChild(recentRow);
-    panel.appendChild(actionRow);
-    panel.appendChild(pathRow);
+    if (!appendTarget) {
+      panel.appendChild(destRow);
+      panel.appendChild(recentRow);
+      panel.appendChild(actionRow);
+      panel.appendChild(pathRow);
+    }
     panel.appendChild(pickArea);
+    if (appendTarget) {
+      pickArea.style.display = 'flex'; // auto-expand pick area in append mode
+    }
 
     // ── Shared logic ──
     function close() {
@@ -1096,10 +1149,24 @@
       const selectedIndices = getSelectedIndices();
       if (selectedIndices.length === 0) return;
 
-      // Panel stays open — user can pick again for another export
       exportBtn.disabled = true;
-      exportBtn.textContent = 'Exporting…';
+      exportBtn.textContent = appendTarget ? 'Appending…' : 'Exporting…';
 
+      if (appendTarget) {
+        // Append mode: send selected responses to existing Doc
+        const parts = selectedIndices.map(i => extractMarkdown(messages[i]).trim()).filter(Boolean);
+        const text = parts.join('\n\n---\n\n');
+        chrome.runtime.sendMessage({ action: 'appendToDoc', fileId: appendTarget.fileId, text }, (resp) => {
+          exportBtn.disabled = false;
+          const shortName = (appendTarget.fileName || '').length > 20 ? appendTarget.fileName.slice(0, 18) + '…' : (appendTarget.fileName || 'doc');
+          exportBtn.textContent = `Append to "${shortName}" →`;
+          if (resp?.success) showToast(`✅ Appended to "<b>${escHtml(appendTarget.fileName)}</b>"`, false, 4000);
+          else showToast('❌ Append failed: ' + (resp?.error || ''), true);
+        });
+        return;
+      }
+
+      // Normal export mode — panel stays open for re-export
       if (selectedIndices.length === 1) {
         await exportMessage(messages[selectedIndices[0]]);
       } else {
