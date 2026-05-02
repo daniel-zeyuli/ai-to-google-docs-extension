@@ -67,15 +67,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'openPickerWindow') {
-    chrome.windows.getLastFocused({ populate: false }, (win) => {
-      const W = 440, H = 460;
-      const left = Math.max(0, (win.left || 0) + (win.width  || 1280) - W - 16);
-      const top  = Math.max(0, (win.top  || 0) + Math.floor(((win.height || 900) - H) / 2));
-      chrome.windows.create(
-        { url: chrome.runtime.getURL('picker-host.html'), type: 'popup', width: W, height: H, left, top },
-        () => sendResponse({ ok: true })
-      );
-    });
+    const W = 440, H = 460;
+    const bx = request.screenX    || 0;
+    const by = request.screenY    || 0;
+    const bw = request.outerWidth || 1280;
+    const bh = request.outerHeight|| 900;
+    const left = Math.max(bx, bx + bw - W - 16);
+    const top  = Math.max(by, by + Math.floor((bh - H) / 2));
+    chrome.windows.create(
+      { url: chrome.runtime.getURL('picker-host.html'), type: 'popup', width: W, height: H, left, top },
+      () => sendResponse({ ok: true })
+    );
     return true;
   }
 });

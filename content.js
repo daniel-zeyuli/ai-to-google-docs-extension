@@ -711,7 +711,11 @@
         // reliably shows the OAuth UI, unlike calling it from a programmatic window.
         chrome.runtime.sendMessage({ action: 'ensureAuth' }, (resp) => {
           if (!resp?.ok) { resolve('cancelled'); return; }
-          chrome.runtime.sendMessage({ action: 'openPickerWindow' }, () => {});
+          chrome.runtime.sendMessage({
+            action: 'openPickerWindow',
+            screenX: window.screenX, screenY: window.screenY,
+            outerWidth: window.outerWidth, outerHeight: window.outerHeight
+          }, () => {});
           const handler = (changes) => {
             if (changes.pickerState) {
               chrome.storage.onChanged.removeListener(handler);
