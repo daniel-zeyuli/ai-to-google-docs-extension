@@ -63,7 +63,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Pre-auth here (popup has user-gesture context) so picker can use cached token
     chrome.identity.getAuthToken({ interactive: true }, (token) => {
       if (!chrome.runtime.lastError && token) {
-        chrome.windows.create({ url: chrome.runtime.getURL('picker-host.html'), type: 'popup', width: 420, height: 440 });
+        chrome.windows.getLastFocused({ populate: false }, (win) => {
+          const W = 440, H = 460;
+          const left = Math.max(0, (win.left || 0) + (win.width  || 1280) - W - 16);
+          const top  = Math.max(0, (win.top  || 0) + Math.floor(((win.height || 900) - H) / 2));
+          chrome.windows.create({ url: chrome.runtime.getURL('picker-host.html'), type: 'popup', width: W, height: H, left, top });
+        });
       }
       window.close();
     });
