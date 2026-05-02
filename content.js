@@ -763,7 +763,7 @@
   function _showAppendDropdown(anchor, exp) {
     document.querySelector('.cgd-append-drop')?.remove();
     const drop = document.createElement('div');
-    drop.className = 'cgd-append-drop';
+    drop.className = 'cgd-append-drop' + (isDarkMode() ? ' cgd-dark' : '');
     const items = [
       { text: '↩ Last response', fn: () => _appendToRecent(exp) },
       { text: '≡ Full conversation', fn: () => _appendFullToDoc(exp) },
@@ -787,7 +787,10 @@
 
   function showSelectPanel(thisMessageEl, appendTarget = null) {
     const existing = document.querySelector('.cgd-panel');
-    if (existing) { existing.remove(); return; }
+    if (existing) {
+      existing.remove();
+      if (!appendTarget) return; // toggle-close in normal mode; in append mode, continue to open new panel
+    }
 
     const messages = getAllAIMessages();
     if (messages.length === 0) { showToast('❌ No AI responses found', true); return; }
