@@ -53,12 +53,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'openPickerWindow') {
-    const W = 440, H = 460;
+    const W = 900, H = 620;
     const bx = request.screenX    || 0;
     const by = request.screenY    || 0;
     const bw = request.outerWidth || 1280;
     const bh = request.outerHeight|| 900;
-    const left = Math.max(bx, bx + bw - W - 16);
+    const left = Math.max(bx, bx + Math.floor((bw - W) / 2));
     const top  = Math.max(by, by + Math.floor((bh - H) / 2));
     chrome.windows.create(
       { url: chrome.runtime.getURL('picker-host.html'), type: 'popup', width: W, height: H, left, top },

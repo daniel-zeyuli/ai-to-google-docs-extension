@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { margin: 0; overflow: hidden; background: transparent; }
+    #err {
+      display: none; position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%,-50%); font-family: -apple-system, sans-serif;
+      font-size: 13px; color: #d93025; text-align: center; line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div id="err"></div>
+  <!-- api.js must load before picker-sandbox.js so gapi is available -->
+  <script src="https://apis.google.com/js/api.js" onerror="gapiLoadError()"></script>
+  <script src="picker-sandbox.js"></script>
+</body>
+</html>

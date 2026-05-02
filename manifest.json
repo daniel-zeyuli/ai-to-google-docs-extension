@@ -8,6 +8,12 @@
     "storage",
     "downloads"
   ],
+  "content_security_policy": {
+    "sandbox": "sandbox allow-scripts allow-forms allow-same-origin; script-src 'self' https://apis.google.com 'unsafe-eval' blob: data:; object-src 'self'"
+  },
+  "sandbox": {
+    "pages": ["picker-sandbox.html"]
+  },
   "host_permissions": [
     "https://www.googleapis.com/*",
     "https://docs.googleapis.com/*"
@@ -18,8 +24,7 @@
   "oauth2": {
     "client_id": "39131322719-3fr4tc7gi8jc3b3mavi6npvatai37b90.apps.googleusercontent.com",
     "scopes": [
-      "https://www.googleapis.com/auth/drive.file",
-      "https://www.googleapis.com/auth/drive.metadata.readonly"
+      "https://www.googleapis.com/auth/drive.file"
     ]
   },
   "commands": {

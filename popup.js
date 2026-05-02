@@ -63,8 +63,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Pre-auth here (popup has user-gesture context) so picker can use cached token
     chrome.identity.getAuthToken({ interactive: true }, (token) => {
       if (!chrome.runtime.lastError && token) {
-        const W = 440, H = 460;
-        const left = Math.max(window.screenX, window.screenX + window.outerWidth  - W - 16);
+        const W = 900, H = 620;
+        const left = Math.max(window.screenX, window.screenX + Math.floor((window.outerWidth  - W) / 2));
         const top  = Math.max(window.screenY, window.screenY + Math.floor((window.outerHeight - H) / 2));
         chrome.windows.create({ url: chrome.runtime.getURL('picker-host.html'), type: 'popup', width: W, height: H, left, top });
       }
