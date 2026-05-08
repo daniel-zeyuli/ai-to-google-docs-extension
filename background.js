@@ -5,7 +5,7 @@
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'uploadToDrive') {
-    handleUpload(request.docxBase64, request.filename)
+    handleUpload(request.docxBase64, request.filename, request.platform)
       .then(result => sendResponse(result))
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
@@ -33,8 +33,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'downloadLocal') {
-    const { docxBase64, filename } = request;
-    const url = 'data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,' + docxBase64;
+    const { docxBase64, filename, mime } = request;
+    const m = mime || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const url = 'data:' + m + ';base64,' + docxBase64;
     chrome.downloads.download({ url, filename, saveAs: true }, () => {
       if (chrome.runtime.lastError) {
         sendResponse({ success: false, error: chrome.runtime.lastError.message });
@@ -52,36 +53,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  if (request.action === 'openPickerWindow') {
-    const W = 900, H = 620;
-    const bx = request.screenX    || 0;
-    const by = request.screenY    || 0;
-    const bw = request.outerWidth || 1280;
-    const bh = request.outerHeight|| 900;
-    const left = Math.max(bx, bx + Math.floor((bw - W) / 2));
-    const top  = Math.max(by, by + Math.floor((bh - H) / 2));
-    chrome.windows.create(
-      { url: chrome.runtime.getURL('picker-host.html'), type: 'popup', width: W, height: H, left, top },
-      (win) => {
-        if (win) _pickerWindowId = win.id;
-        sendResponse({ ok: true });
-      }
-    );
-    return true;
-  }
-});
-
-// ── Detect picker window closed via OS ✕ (more reliable than beforeunload async write) ──
-let _pickerWindowId = null;
-chrome.windows.onRemoved.addListener((windowId) => {
-  if (windowId !== _pickerWindowId) return;
-  _pickerWindowId = null;
-  // Only write 'cancelled' if pickerState wasn't already set by the picker itself.
-  // content.js removes its storage.onChanged listener on first change, so a late
-  // 'cancelled' after 'done' is harmless — but avoid clobbering 'done' unnecessarily.
-  chrome.storage.local.get('pickerState', (d) => {
-    if (!d.pickerState) chrome.storage.local.set({ pickerState: 'cancelled' });
-  });
 });
 
 // ── Keyboard shortcut: forward to active tab's content script ──
@@ -114,13 +85,6 @@ function removeCachedToken(token) {
 // ── Fetch image via background worker (bypasses content script CORS) ──
 async function fetchImageAsBase64(url) {
   try {
-    // Request optional permission for this origin at runtime
-    const origin = new URL(url).origin + '/*';
-    const hasIt = await chrome.permissions.contains({ origins: [origin] });
-    if (!hasIt) {
-      const granted = await chrome.permissions.request({ origins: [origin] });
-      if (!granted) return { success: false, denied: true };
-    }
     const resp = await fetch(url);
     if (!resp.ok) return { success: false };
     const blob = await resp.blob();
@@ -145,60 +109,82 @@ async function fetchImageAsBase64(url) {
   }
 }
 
-// ── Auto-create "AI Chat Exports" folder in Drive ──
-async function getOrCreateExportFolder(token) {
+// ── Folder layout: AI Chat Exports/<Platform>/ ──
+// Returns the platform-specific subfolder ID (or the parent folder ID if no platform / subfolder fails).
+async function getOrCreateExportFolder(token, platform) {
   try {
-    // User-selected folder takes priority
-    const custom = await chrome.storage.local.get('customFolderId');
-    if (custom.customFolderId) {
+    // Legacy cleanup: drop customFolderId from pre-v1.0 versions (folder picker removed in Path A).
+    await chrome.storage.local.remove(['customFolderId', 'customFolderName']);
+
+    const parentId = await _getOrCreateFolder(token, 'AI Chat Exports', null, 'exportFolderId');
+    if (!parentId) return null;
+    if (!platform) return parentId;
+
+    const stored = await chrome.storage.local.get('exportFolderIds');
+    const subIds = stored.exportFolderIds || {};
+    let subId = subIds[platform];
+
+    if (subId) {
       const check = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${custom.customFolderId}?fields=id,trashed`,
+        `https://www.googleapis.com/drive/v3/files/${subId}?fields=id,trashed`,
         { headers: { 'Authorization': 'Bearer ' + token } }
       );
       if (check.ok) {
         const data = await check.json();
-        if (!data.trashed) return custom.customFolderId;
+        if (!data.trashed) return subId;
       }
-      await chrome.storage.local.remove(['customFolderId', 'customFolderName']);
+      delete subIds[platform];
+      await chrome.storage.local.set({ exportFolderIds: subIds });
     }
 
-    const stored = await chrome.storage.local.get('exportFolderId');
-    const folderId = stored.exportFolderId;
-
-    if (folderId) {
-      // Verify folder still exists and isn't trashed
-      const check = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${folderId}?fields=id,trashed`,
-        { headers: { 'Authorization': 'Bearer ' + token } }
-      );
-      if (check.ok) {
-        const data = await check.json();
-        if (!data.trashed) return folderId;
-      }
-      await chrome.storage.local.remove('exportFolderId');
-    }
-
-    // Create the folder
     const res = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: 'AI Chat Exports',
-        mimeType: 'application/vnd.google-apps.folder'
+        name: platform,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: [parentId]
       })
     });
-
-    if (!res.ok) return null; // silently fall back to Drive root
+    if (!res.ok) return parentId; // fallback: drop into the AI Chat Exports parent
     const { id } = await res.json();
-    await chrome.storage.local.set({ exportFolderId: id });
+    subIds[platform] = id;
+    await chrome.storage.local.set({ exportFolderIds: subIds });
     return id;
   } catch {
     return null; // never block an export over folder issues
   }
 }
 
+async function _getOrCreateFolder(token, name, parentId, storageKey) {
+  const stored = await chrome.storage.local.get(storageKey);
+  const existing = stored[storageKey];
+  if (existing) {
+    const check = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${existing}?fields=id,trashed`,
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    if (check.ok) {
+      const data = await check.json();
+      if (!data.trashed) return existing;
+    }
+    await chrome.storage.local.remove(storageKey);
+  }
+  const body = { name, mimeType: 'application/vnd.google-apps.folder' };
+  if (parentId) body.parents = [parentId];
+  const res = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) return null;
+  const { id } = await res.json();
+  await chrome.storage.local.set({ [storageKey]: id });
+  return id;
+}
+
 // ── Drive upload ──
-async function handleUpload(docxBase64, filename) {
+async function handleUpload(docxBase64, filename, platform) {
   let token;
   try {
     token = await getAuthToken(true);
@@ -231,7 +217,7 @@ async function handleUpload(docxBase64, filename) {
   }
 
   // Get or create "AI Chat Exports" folder
-  const folderId = await getOrCreateExportFolder(token);
+  const folderId = await getOrCreateExportFolder(token, platform);
 
   const metadata = {
     name: filename.replace('.docx', ''),

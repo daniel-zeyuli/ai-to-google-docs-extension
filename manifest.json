@@ -1,25 +1,19 @@
 {
   "manifest_version": 3,
-  "name": "AI Chat Exporter for Google Docs",
-  "version": "3.9.2",
-  "description": "One-click export of ChatGPT, Claude, and Gemini responses into Google Docs with math, tables, code, and images preserved.",
+  "name": "__MSG_appName__",
+  "version": "4.0.0",
+  "description": "__MSG_appDescription__",
+  "default_locale": "en",
   "permissions": [
     "identity",
     "storage",
     "downloads"
   ],
-  "content_security_policy": {
-    "sandbox": "sandbox allow-scripts allow-forms allow-same-origin allow-popups; script-src 'self' https://apis.google.com 'unsafe-eval'; object-src 'self'"
-  },
-  "sandbox": {
-    "pages": ["picker-sandbox.html"]
-  },
   "host_permissions": [
     "https://www.googleapis.com/*",
-    "https://docs.googleapis.com/*"
-  ],
-  "optional_host_permissions": [
-    "<all_urls>"
+    "https://docs.googleapis.com/*",
+    "https://oaiusercontent.com/*",
+    "https://*.googleusercontent.com/*"
   ],
   "oauth2": {
     "client_id": "39131322719-3fr4tc7gi8jc3b3mavi6npvatai37b90.apps.googleusercontent.com",
@@ -38,7 +32,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "AI Chat Exporter for Google Docs"
+    "default_title": "ChatGPT to Google Docs - Export Gemini & Claude"
   },
   "content_scripts": [
     {

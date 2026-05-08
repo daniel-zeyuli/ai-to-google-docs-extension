@@ -14,13 +14,17 @@
   const isChatGPT = location.hostname.includes('chatgpt.com') || location.hostname.includes('chat.openai.com');
   const isClaude = location.hostname.includes('claude.ai');
 
+  const DRIVE_ICON_SVG = `<svg width="15" height="13" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:inline-block;vertical-align:text-bottom"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066DA"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0-1.2 4.5h27.5z" fill="#00AC47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#EA4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832D"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684FC"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#FFBA00"/></svg>`;
+  const DOCX_ICON_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:inline-block;vertical-align:text-bottom"><rect x="2" y="1" width="20" height="22" rx="2" fill="#2B579A"/><path d="M7 9.5l1.5 5 1.5-3.5 1.5 3.5 1.5-5" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
+  const MARKDOWN_ICON_SVG = `<svg width="15" height="13" viewBox="0 0 208 128" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:inline-block;vertical-align:text-bottom"><rect x="4" y="4" width="200" height="120" rx="10" fill="none" stroke="currentColor" stroke-width="8"/><path d="M30 94V34h18l18 23 18-23h18v60H82V63L66 84 50 63v31zM145 94l-28-30h18V34h20v30h18z" fill="currentColor"/></svg>`;
+
   let exportDest = 'drive';
   chrome.storage.local.get('exportDest', d => { exportDest = d.exportDest || 'drive'; });
 
-  // Update all injected export buttons when destination or folder changes
+  // Update all injected export buttons when destination changes
   chrome.storage.onChanged.addListener((changes) => {
-    if (changes.exportDest || changes.customFolderName) {
-      if (changes.exportDest) exportDest = changes.exportDest.newValue || 'drive';
+    if (changes.exportDest) {
+      exportDest = changes.exportDest.newValue || 'drive';
       document.querySelectorAll('.' + BUTTON_CLASS).forEach(btn => _updateExportBtnContent(btn));
     }
   });
@@ -84,7 +88,6 @@
 
   async function _captureImages() {
     const map = {};
-    let shownPermissionToast = false;
     for (const { idx, el, alt } of _imgCaptures) {
       // Strategy 1: canvas (works if same-origin or CORS-permissive)
       if (el && el.naturalWidth && el.naturalHeight) {
@@ -100,6 +103,7 @@
         } catch (_) { /* tainted canvas — try fetch */ }
       }
       // Strategy 2: background worker fetch → OffscreenCanvas → PNG
+      // Works for AI platform CDNs listed in host_permissions (oaiusercontent.com, googleusercontent.com)
       const src = (el && (el.src || el.getAttribute('src'))) || '';
       if (!src || src.startsWith('data:')) continue;
       try {
@@ -110,9 +114,6 @@
         });
         if (result.success && result.base64 && result.w && result.h) {
           map[idx] = { data: result.base64, w: result.w, h: result.h, alt: alt || '' };
-        } else if (result.denied && !shownPermissionToast) {
-          shownPermissionToast = true;
-          showToast('⚠️ Image embedding needs permission. Click "Allow" when Chrome asks to enable image export.', false, 6000);
         }
       } catch (_) { /* background fetch failed — will show [Image] placeholder */ }
     }
@@ -266,8 +267,11 @@
                      messageEl.querySelector('.response-content') ||
                      messageEl;
       } else if (isClaude) {
-        contentDiv = messageEl.querySelector('.font-claude-response') ||
-                     messageEl.querySelector('[class*="font-claude-response"]') ||
+        // Primary: .standard-markdown (current Claude markdown wrapper).
+        // If messageEl is already .standard-markdown (typical when called from
+        // _claudeFindResponses), the descendant query returns null and we use messageEl.
+        contentDiv = messageEl.querySelector('.standard-markdown') ||
+                     messageEl.querySelector('[class*="markdown"]') ||
                      messageEl;
       } else {
         contentDiv = messageEl;
@@ -275,11 +279,43 @@
       let md = '';
       for (const child of contentDiv.childNodes) md += processNode(child);
 
+      // If the chosen contentDiv yielded almost nothing, retry with the original messageEl
+      // (the wrapper might be a metadata/header div that doesn't contain the response body).
+      if (md.trim().length < 20 && contentDiv !== messageEl) {
+        let mdRetry = '';
+        for (const child of messageEl.childNodes) mdRetry += processNode(child);
+        if (mdRetry.trim().length > md.trim().length) md = mdRetry;
+      }
+
       // VALIDATION: Check if math annotations exist but weren't captured
       const annotations = contentDiv.querySelectorAll('annotation[encoding="application/x-tex"], .math-inline[data-math], .math-block[data-math]');
       if (annotations.length > 0) {
         const hasMath = md.includes('$');
         if (!hasMath) md = directExtractWithMath(contentDiv);
+      }
+
+      // If still tiny, walk UP from messageEl looking for an ancestor with substantial text.
+      // Handles the case where Claude's wrapper element (e.g. font-claude-response) is itself
+      // empty and the actual response sits in a sibling subtree we missed.
+      if (md.trim().length < 20) {
+        let ancestor = messageEl.parentElement;
+        for (let i = 0; i < 6 && ancestor && ancestor !== document.body; i++, ancestor = ancestor.parentElement) {
+          if (ancestor.querySelector('[class*="font-user-message"]')) continue;
+          const ancText = (ancestor.textContent || '').trim();
+          if (ancText.length < 40) continue;
+          let mdAnc = '';
+          for (const child of ancestor.childNodes) mdAnc += processNode(child);
+          if (mdAnc.trim().length > md.trim().length) {
+            md = mdAnc;
+            break;
+          }
+        }
+      }
+
+      // Last-resort fallback: if we still have almost nothing, use raw text content.
+      if (md.trim().length < 20) {
+        const text = (messageEl.textContent || messageEl.innerText || '').trim();
+        if (text.length > md.trim().length) md = text;
       }
 
       return md.trim();
@@ -424,22 +460,19 @@
       return cap?.alt ? `[Image: ${cap.alt}]` : '[Image]';
     });
 
-    // Prepend source metadata header (italic line at top of every export)
+    // Header: metadata line + MLA citation line (top of doc — survives appends).
     const now = new Date();
     const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
     const platformName = isGemini ? 'Gemini' : isClaude ? 'Claude' : 'ChatGPT';
     const convTitle = getConversationTitle();
     const metaParts = [platformName, dateStr, ...(convTitle ? [convTitle] : [])];
     const sourceUrl = location.origin + location.pathname;
-    markdown = `*${metaParts.join(' · ')}*\n*${sourceUrl}*\n\n` + markdown;
-
-    let blob;
-    try {
-      blob = window.convertChatGPTToDocx(markdown, imageMap);
-    } catch(e) {
-      showToast('❌ Error generating document: ' + e.message, true);
-      return;
-    }
+    const vendor = isGemini ? 'Google' : isClaude ? 'Anthropic' : 'OpenAI';
+    const mlaMonths = ['Jan.','Feb.','Mar.','Apr.','May','June','July','Aug.','Sept.','Oct.','Nov.','Dec.'];
+    const mlaDate = `${now.getDate()} ${mlaMonths[now.getMonth()]} ${now.getFullYear()}`;
+    const citeTitle = (convTitle ? convTitle.replace(/_/g, ' ') : 'AI conversation');
+    const citation = `${vendor}. "${citeTitle}." ${platformName}, ${mlaDate}, ${sourceUrl}.`;
+    markdown = `*${metaParts.join(' · ')}*\n*Citation (MLA): ${citation}*\n\n` + markdown;
 
     const timestamp = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}`;
     const platform = platformName;
@@ -449,6 +482,41 @@
 
     if (!chrome.runtime || !chrome.runtime.sendMessage) {
       showToast('❌ Extension reloaded. Please refresh this page.', true);
+      return;
+    }
+
+    if (exportDest === 'markdown') {
+      const mdFilename = filename.replace(/\.docx$/, '.md');
+      const mdBytes = new TextEncoder().encode(markdown);
+      let mdBinary = '';
+      for (let i = 0; i < mdBytes.length; i += 8192) {
+        mdBinary += String.fromCharCode(...mdBytes.subarray(i, Math.min(i + 8192, mdBytes.length)));
+      }
+      const mdBase64 = btoa(mdBinary);
+      showToast('⏳ Preparing download...');
+      try {
+        await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage(
+            { action: 'downloadLocal', docxBase64: mdBase64, filename: mdFilename, mime: 'text/markdown;charset=utf-8' },
+            (resp) => {
+              if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+              else if (resp?.success) resolve();
+              else reject(new Error(resp?.error || 'Download failed'));
+            }
+          );
+        });
+        showToast('✅ Saved as .md!', false, 4000);
+      } catch(e) {
+        showToast('❌ Save failed: ' + e.message, true);
+      }
+      return;
+    }
+
+    let blob;
+    try {
+      blob = window.convertChatGPTToDocx(markdown, imageMap);
+    } catch(e) {
+      showToast('❌ Error generating document: ' + e.message, true);
       return;
     }
     const base64 = await blobToBase64(blob);
@@ -475,7 +543,7 @@
       try {
         const result = await new Promise((resolve, reject) => {
           chrome.runtime.sendMessage(
-            { action: 'uploadToDrive', docxBase64: base64, filename },
+            { action: 'uploadToDrive', docxBase64: base64, filename, platform: platformName },
             (response) => {
               if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
               else if (response && response.success) resolve(response);
@@ -491,12 +559,12 @@
           const allExports = d.lastExports || {};
           const history = Array.isArray(allExports[convKey]) ? allExports[convKey] : (allExports[convKey] ? [allExports[convKey]] : []);
           const newEntry = { fileName: result.fileName, url: result.url, fileId: result.fileId, exportedAt: Date.now() };
-          const filtered = history.filter(e => e.fileId !== newEntry.fileId);
+          const filtered = history.filter(e => e.fileId !== newEntry.fileId && e.fileName !== newEntry.fileName);
           allExports[convKey] = [newEntry, ...filtered].slice(0, 3);
           chrome.storage.local.set({ lastExports: allExports });
           chrome.storage.local.get('globalRecentDocs', (gd) => {
             const global = Array.isArray(gd.globalRecentDocs) ? gd.globalRecentDocs : [];
-            const gFiltered = global.filter(e => e.fileId !== newEntry.fileId);
+            const gFiltered = global.filter(e => e.fileId !== newEntry.fileId && e.fileName !== newEntry.fileName);
             chrome.storage.local.set({ globalRecentDocs: [newEntry, ...gFiltered].slice(0, 5) });
           });
         });
@@ -552,8 +620,7 @@
       return msgs[msgs.length - 1] || null;
     }
     if (isClaude) {
-      const responses = Array.from(document.querySelectorAll('[class*="font-claude-response"]'))
-        .filter(el => !el.parentElement?.closest('[class*="font-claude-response"]'));
+      const responses = _claudeFindResponses();
       return responses[responses.length - 1] || null;
     }
     return null;
@@ -597,8 +664,7 @@
     } else if (isClaude) {
       const userEls = Array.from(document.querySelectorAll('[class*="font-user-message"]'))
         .filter(el => !el.parentElement?.closest('[class*="font-user-message"]'));
-      const aiEls = Array.from(document.querySelectorAll('[class*="font-claude-response"]'))
-        .filter(el => !el.parentElement?.closest('[class*="font-claude-response"]'));
+      const aiEls = _claudeFindResponses();
       const all = [
         ...userEls.map(el => ({ el, role: 'You' })),
         ...aiEls.map(el => ({ el, role: 'Claude' }))
@@ -684,11 +750,33 @@
       return Array.from(document.querySelectorAll('message-content[data-content-type="model"]'))
         .filter(el => !el.parentElement?.closest('message-content[data-content-type="model"]'));
     }
-    if (isClaude) {
-      return Array.from(document.querySelectorAll('[class*="font-claude-response"]'))
-        .filter(el => !el.parentElement?.closest('[class*="font-claude-response"]'));
-    }
+    if (isClaude) return _claudeFindResponses();
     return [];
+  }
+
+  // Robust Claude response finder. Primary signal is `.standard-markdown` — Claude's
+  // current per-message markdown wrapper (verified ~1 match per response on the live DOM).
+  // The older `font-claude-response` class is now a generic styling token used on hundreds
+  // of unrelated elements, so we don't use it as a content selector anymore.
+  function _claudeFindResponses() {
+    let r = Array.from(document.querySelectorAll('.standard-markdown'))
+      .filter(el => !el.parentElement?.closest('.standard-markdown'));
+    if (r.length) return r;
+    // Fallback: walk up from each non-code-block Copy button to the nearest .standard-markdown
+    // sibling subtree. If still nothing, return the closest substantial-text ancestor.
+    const out = [];
+    document.querySelectorAll('button[aria-label="Copy"]').forEach(btn => {
+      if (btn.closest('pre') || btn.closest('[data-code-block]') || btn.closest('.code-block')) return;
+      let p = btn.parentElement;
+      for (let i = 0; i < 12 && p && p !== document.body; i++, p = p.parentElement) {
+        const md = p.querySelector('.standard-markdown, [class*="markdown"]');
+        if (md && !p.querySelector('[class*="font-user-message"]')) {
+          if (!out.includes(md)) out.push(md);
+          return;
+        }
+      }
+    });
+    return out;
   }
 
   function getCleanPreview(msgEl) {
@@ -702,36 +790,6 @@
     return firstMeaningful.trim().slice(0, 85);
   }
 
-  // Open the Drive folder picker (via background worker) and wait for the user
-  // to select a folder or cancel. Returns 'done', 'cancelled', or 'timeout'.
-  function _pickDriveFolder() {
-    return new Promise((resolve) => {
-      chrome.storage.local.remove('pickerState', () => {
-        // Auth must succeed in background first; background's getAuthToken(true)
-        // reliably shows the OAuth UI, unlike calling it from a programmatic window.
-        chrome.runtime.sendMessage({ action: 'ensureAuth' }, (resp) => {
-          if (!resp?.ok) { resolve('cancelled'); return; }
-          chrome.runtime.sendMessage({
-            action: 'openPickerWindow',
-            screenX: window.screenX, screenY: window.screenY,
-            outerWidth: window.outerWidth, outerHeight: window.outerHeight
-          }, () => {});
-          const handler = (changes) => {
-            if (changes.pickerState) {
-              chrome.storage.onChanged.removeListener(handler);
-              clearTimeout(tid);
-              resolve(changes.pickerState.newValue);
-            }
-          };
-          chrome.storage.onChanged.addListener(handler);
-          const tid = setTimeout(() => {
-            chrome.storage.onChanged.removeListener(handler);
-            resolve('timeout');
-          }, 120000);
-        });
-      });
-    });
-  }
 
   function _appendToRecent(exp) {
     if (!exp.fileId) return;
@@ -795,7 +853,7 @@
     const messages = getAllAIMessages();
     if (messages.length === 0) { showToast('❌ No AI responses found', true); return; }
 
-    chrome.storage.local.get(['customFolderName', 'lastExports', 'globalRecentDocs'], (storageData) => {
+    chrome.storage.local.get(['lastExports', 'globalRecentDocs'], (storageData) => {
       _buildSelectPanel(messages, thisMessageEl, storageData, appendTarget);
     });
   }
@@ -846,24 +904,23 @@
     destRow.className = 'cgd-dest-row';
 
     const btnDrive = document.createElement('button');
-    btnDrive.className = 'cgd-dest-btn cgd-dest-btn-drive';
-
-    // Drive button shows current folder name; updates after picker
-    function _updateDriveBtnLabel() {
-      chrome.storage.local.get('customFolderName', d => {
-        const n = d.customFolderName || 'AI Chat Exports';
-        const s = n.length > 20 ? n.slice(0, 18) + '…' : n;
-        btnDrive.textContent = `☁️ ${s}  ›`;
-      });
-    }
-    _updateDriveBtnLabel();
+    btnDrive.className = 'cgd-dest-btn';
+    btnDrive.title = 'Google Drive';
+    btnDrive.innerHTML = DRIVE_ICON_SVG + '<span>Drive</span>';
 
     const btnLocal = document.createElement('button');
     btnLocal.className = 'cgd-dest-btn';
-    btnLocal.textContent = '💾 Local';
+    btnLocal.title = 'Local Word file (.docx)';
+    btnLocal.innerHTML = DOCX_ICON_SVG + '<span>Word</span>';
+
+    const btnMd = document.createElement('button');
+    btnMd.className = 'cgd-dest-btn';
+    btnMd.title = 'Local Markdown file (.md)';
+    btnMd.innerHTML = '<span style="font-size:13px;line-height:1">📝</span><span>Markdown</span>';
 
     destRow.appendChild(btnDrive);
     destRow.appendChild(btnLocal);
+    destRow.appendChild(btnMd);
 
     // ── Path confirmation row (below export buttons — created here, appended after actionRow) ──
     const pathRow = document.createElement('div');
@@ -881,18 +938,63 @@
     const convIds = new Set(convHistory.map(e => e.fileId));
     const globalExtra = (Array.isArray(storageData.globalRecentDocs) ? storageData.globalRecentDocs : [])
       .filter(e => !convIds.has(e.fileId));
-    const recents = [...convHistory, ...globalExtra].slice(0, 2);
+    const _seenIds = new Set(), _seenNames = new Set();
+    const recents = [...convHistory, ...globalExtra]
+      .filter(e => {
+        if (_seenIds.has(e.fileId) || _seenNames.has(e.fileName)) return false;
+        _seenIds.add(e.fileId); _seenNames.add(e.fileName);
+        return true;
+      })
+      .slice(0, 2);
+
+    let selectedChip = null;
+
+    function updatePathRow() {
+      if (selectedChip) {
+        const shortName = selectedChip.fileName.length > 25 ? selectedChip.fileName.slice(0, 23) + '…' : selectedChip.fileName;
+        pathRowText.textContent = `📄 Appending to: ${shortName}`;
+      } else if (exportDest === 'markdown') {
+        pathRowText.textContent = 'Saving as: 📝 Markdown (.md)';
+      } else if (exportDest === 'drive') {
+        const _platLabel = isGemini ? 'Gemini' : isClaude ? 'Claude' : 'ChatGPT';
+        pathRowText.textContent = `Saving to: 📁 AI Chat Exports / ${_platLabel}`;
+      } else {
+        pathRowText.textContent = 'Saving to: 💾 local .docx';
+      }
+    }
+
+    function updateExportBtnLabel() {
+      const target = appendTarget || selectedChip;
+      if (target) {
+        const shortName = (target.fileName || '').length > 20 ? target.fileName.slice(0, 18) + '…' : (target.fileName || 'doc');
+        exportBtn.textContent = `Append to "${shortName}" →`;
+      } else {
+        exportBtn.textContent = exportDest === 'local' ? 'Save .docx →' : 'Export to Docs →';
+      }
+    }
 
     function buildRecentChips() {
       recentRow.innerHTML = '';
-      if (exportDest !== 'drive' || recents.length === 0) {
-        recentRow.style.display = 'none';
-        return;
-      }
-      recentRow.style.display = 'flex';
+      recentRow.style.display = (exportDest === 'drive' && recents.length > 0) ? 'flex' : 'none';
+      if (exportDest !== 'drive' || recents.length === 0) return;
       recents.forEach(exp => {
         const chip = document.createElement('div');
         chip.className = 'cgd-recent-chip';
+
+        // Click chip body → select/deselect as append target for Last/Full/Pick
+        chip.addEventListener('click', (e) => {
+          if (e.target.closest('.cgd-rc-btn')) return;
+          if (selectedChip && selectedChip.fileId === exp.fileId) {
+            selectedChip = null;
+            chip.classList.remove('cgd-chip-selected');
+          } else {
+            selectedChip = exp;
+            recentRow.querySelectorAll('.cgd-recent-chip').forEach(c => c.classList.remove('cgd-chip-selected'));
+            chip.classList.add('cgd-chip-selected');
+          }
+          updatePathRow();
+          updateExportBtnLabel();
+        });
 
         const icon = document.createElement('span');
         icon.className = 'cgd-rc-icon';
@@ -908,7 +1010,6 @@
         tsEl.className = 'cgd-rc-ts';
         tsEl.textContent = _formatRelativeTime(exp.exportedAt);
 
-        // Action buttons — fade in on hover via CSS
         const actions = document.createElement('span');
         actions.className = 'cgd-rc-actions';
 
@@ -941,51 +1042,27 @@
     function applyDestUI() {
       btnDrive.classList.toggle('cgd-dest-active', exportDest === 'drive');
       btnLocal.classList.toggle('cgd-dest-active', exportDest === 'local');
-      buildRecentChips();
-      // Update path confirmation row
-      if (exportDest === 'drive') {
-        chrome.storage.local.get('customFolderName', d => {
-          pathRowText.textContent = 'Saving to: 📁 ' + (d.customFolderName || 'AI Chat Exports');
-        });
-      } else {
-        pathRowText.textContent = 'Saving to: 💾 local .docx';
+      btnMd.classList.toggle('cgd-dest-active', exportDest === 'markdown');
+      if (exportDest !== 'drive') {
+        selectedChip = null;
+        recentRow.querySelectorAll('.cgd-recent-chip').forEach(c => c.classList.remove('cgd-chip-selected'));
       }
+      recentRow.style.display = (exportDest === 'drive' && recents.length > 0) ? 'flex' : 'none';
+      updatePathRow();
     }
     applyDestUI();
 
-    btnDrive.addEventListener('click', async () => {
-      if (exportDest === 'drive') {
-        // Already on Drive → open picker to change folder
-        const prevText = btnDrive.textContent;
-        btnDrive.textContent = '⏳ Opening…';
-        btnDrive.disabled = true;
-        const result = await _pickDriveFolder();
-        btnDrive.disabled = false;
-        if (result === 'done') {
-          _updateDriveBtnLabel();
-          applyDestUI();
-        } else if (result === 'timeout') {
-          btnDrive.textContent = prevText;
-          showToast('⚠️ Folder picker timed out. Please try again.', true, 4000);
-        } else {
-          btnDrive.textContent = prevText; // cancelled — restore label
-        }
-      } else {
-        // Switch from Local to Drive (no picker — just switch)
-        exportDest = 'drive';
-        chrome.storage.local.set({ exportDest: 'drive' });
-        _updateDriveBtnLabel();
-        applyDestUI();
-        exportBtn.textContent = 'Export to Docs →';
-      }
-    });
-
-    btnLocal.addEventListener('click', () => {
-      exportDest = 'local';
-      chrome.storage.local.set({ exportDest: 'local' });
+    function setDest(dest) {
+      if (exportDest === dest) return;
+      exportDest = dest;
+      chrome.storage.local.set({ exportDest: dest });
       applyDestUI();
-      exportBtn.textContent = 'Save .docx →';
-    });
+      document.querySelectorAll('.' + BUTTON_CLASS).forEach(btn => _updateExportBtnContent(btn));
+      updateExportBtnLabel();
+    }
+    btnDrive.addEventListener('click', () => setDest('drive'));
+    btnLocal.addEventListener('click', () => setDest('local'));
+    btnMd.addEventListener('click',    () => setDest('markdown'));
 
     // ── Action row: Last / Full / Pick ──
     const actionRow = document.createElement('div');
@@ -1145,6 +1222,7 @@
     }
 
     function outsideClickHandler(e) {
+      if (!document.body.contains(e.target)) return;
       if (!panel.contains(e.target)) close();
     }
 
@@ -1168,18 +1246,18 @@
       const selectedIndices = getSelectedIndices();
       if (selectedIndices.length === 0) return;
 
+      const target = appendTarget || selectedChip;
       exportBtn.disabled = true;
-      exportBtn.textContent = appendTarget ? 'Appending…' : 'Exporting…';
+      exportBtn.textContent = target ? 'Appending…' : 'Exporting…';
 
-      if (appendTarget) {
+      if (target) {
         // Append mode: send selected responses to existing Doc
         const parts = selectedIndices.map(i => extractMarkdown(messages[i]).trim()).filter(Boolean);
         const text = parts.join('\n\n---\n\n');
-        chrome.runtime.sendMessage({ action: 'appendToDoc', fileId: appendTarget.fileId, text }, (resp) => {
+        chrome.runtime.sendMessage({ action: 'appendToDoc', fileId: target.fileId, text }, (resp) => {
           exportBtn.disabled = false;
-          const shortName = (appendTarget.fileName || '').length > 20 ? appendTarget.fileName.slice(0, 18) + '…' : (appendTarget.fileName || 'doc');
-          exportBtn.textContent = `Append to "${shortName}" →`;
-          if (resp?.success) showToast(`✅ Appended to "<b>${escHtml(appendTarget.fileName)}</b>"`, false, 4000);
+          updateExportBtnLabel();
+          if (resp?.success) showToast(`✅ Appended to "<b>${escHtml(target.fileName)}</b>"`, false, 4000);
           else showToast('❌ Append failed: ' + (resp?.error || ''), true);
         });
         return;
@@ -1201,20 +1279,30 @@
       }
 
       exportBtn.disabled = false;
-      exportBtn.textContent = exportDest === 'local' ? 'Save .docx →' : 'Export to Docs →';
+      updateExportBtnLabel();
     }
 
     header.querySelector('.cgd-panel-close').addEventListener('click', close);
 
     btnLast.addEventListener('click', () => {
-      close();
-      const el = getLastAIMessage();
-      if (el) exportMessage(el); else showToast('❌ No AI response found', true);
+      if (selectedChip) {
+        _appendToRecent(selectedChip);
+        close();
+      } else {
+        close();
+        const el = getLastAIMessage();
+        if (el) exportMessage(el); else showToast('❌ No AI response found', true);
+      }
     });
 
     btnFull.addEventListener('click', () => {
-      close();
-      exportFullConversation();
+      if (selectedChip) {
+        _appendFullToDoc(selectedChip);
+        close();
+      } else {
+        close();
+        exportFullConversation();
+      }
     });
 
     btnPick.addEventListener('click', () => {
@@ -1257,7 +1345,24 @@
   }
 
   function findChatGPTActionBar(container) {
-    // Text responses: copy button has a specific data-testid
+    // Always prefer the thumbs bar — it's the canonical bottom action bar on both text
+    // and image responses. Checking copy-turn-action-button first was wrong because
+    // ChatGPT image cards also expose a copy button in the top-right overlay, causing
+    // the export button to land there instead of the bottom bar.
+    const thumbBtn = container.querySelector(
+      'button[data-testid="thumbs-up-button"], button[data-testid="thumbs-down-button"], ' +
+      'button[aria-label="Good response"], button[aria-label="Bad response"], ' +
+      'button[aria-label="Thumbs up"], button[aria-label="Thumbs down"]'
+    );
+    if (thumbBtn) {
+      let bar = thumbBtn.parentElement;
+      for (let i = 0; i < 4 && bar; i++) {
+        if (bar.querySelectorAll('button').length >= 2 && bar.offsetHeight < 60) return bar;
+        bar = bar.parentElement;
+      }
+      return thumbBtn.parentElement;
+    }
+    // Fallback for text responses where thumbs haven't rendered yet
     const copyBtn = container.querySelector('button[data-testid="copy-turn-action-button"]');
     if (copyBtn) {
       let bar = copyBtn.parentElement;
@@ -1266,19 +1371,6 @@
         bar = bar.parentElement;
       }
       return copyBtn.parentElement;
-    }
-    // Image-only responses: action bar has thumbs-up/down buttons (no copy-turn-action-button)
-    const thumbBtn = container.querySelector(
-      'button[data-testid="thumbs-up-button"], button[data-testid="thumbs-down-button"], ' +
-      'button[aria-label="Good response"], button[aria-label="Bad response"]'
-    );
-    if (thumbBtn) {
-      let bar = thumbBtn.parentElement;
-      for (let i = 0; i < 3 && bar; i++) {
-        if (bar.querySelectorAll('button').length >= 2 && bar.offsetHeight < 60) return bar;
-        bar = bar.parentElement;
-      }
-      return thumbBtn.parentElement;
     }
     const allDivs = container.querySelectorAll('div.flex');
     for (const div of allDivs) {
@@ -1304,6 +1396,11 @@
                             resp.closest('.response-turn') ||
                             resp;
 
+      turnContainer.querySelectorAll('.' + BUTTON_CLASS).forEach(existingBtn => {
+        const existingBar = existingBtn.parentElement;
+        if (existingBar && !isGeminiResponseActionBar(existingBar)) existingBtn.remove();
+      });
+
       if (turnContainer.querySelector('.' + BUTTON_CLASS)) continue;
 
       // Find action bar (Gemini has copy, thumbs up/down buttons)
@@ -1320,7 +1417,7 @@
     const copyButtons = document.querySelectorAll('button[aria-label="Copy"], button[data-tooltip="Copy"]');
     for (const copyBtn of copyButtons) {
       // Walk up to find the full action bar including three-dots button
-      let actionBar = copyBtn.parentElement;
+      let actionBar = findGeminiActionRowFromButton(copyBtn) || copyBtn.parentElement;
       for (let i = 0; i < 3 && actionBar; i++) {
         const hasMore = actionBar.querySelector('button[aria-label*="more" i], button[data-tooltip*="more" i]');
         if (hasMore) break;
@@ -1328,14 +1425,7 @@
       }
       if (!actionBar || actionBar.querySelector('.' + BUTTON_CLASS)) continue;
 
-      // Skip image overlay buttons — those only have copy+download, no thumbs/share.
-      // Real response action bars always contain thumbs-up or thumbs-down buttons.
-      const isResponseBar = actionBar.querySelector(
-        'button[aria-label*="thumb" i], button[aria-label*="like" i], ' +
-        'button[aria-label*="dislike" i], button[aria-label*="good" i], ' +
-        'button[aria-label*="bad" i], button[data-tooltip*="thumb" i]'
-      );
-      if (!isResponseBar) continue;
+      if (!isGeminiResponseActionBar(actionBar)) continue;
 
       // Find the associated response content
       const turnContainer = copyBtn.closest('.conversation-turn') ||
@@ -1360,20 +1450,56 @@
     const buttons = container.querySelectorAll('button');
     for (const btn of buttons) {
       const label = (btn.getAttribute('aria-label') || btn.getAttribute('data-tooltip') || '').toLowerCase();
-      if (label.includes('copy') || label.includes('share') || label.includes('thumb')) {
-        // Walk up to find the bar that also contains the three-dots / more-options button
-        let bar = btn.parentElement;
-        for (let i = 0; i < 3 && bar; i++) {
-          const hasMore = bar.querySelector('button[aria-label*="more" i], button[aria-label*="option" i], button[data-tooltip*="more" i]');
-          if (hasMore) return bar;
-          bar = bar.parentElement;
-        }
-        return btn.parentElement;
+      if (label.includes('copy') || label.includes('share') || label.includes('thumb') || label.includes('like') || label.includes('dislike')) {
+        const bar = findGeminiActionRowFromButton(btn);
+        if (bar) return bar;
       }
     }
-    return container.querySelector('.action-buttons') ||
-           container.querySelector('.response-actions') ||
-           container.querySelector('[class*="action"]');
+    return Array.from(container.querySelectorAll('.action-buttons, .response-actions, [class*="action"]'))
+      .find(isGeminiResponseActionBar) || null;
+  }
+
+  function findGeminiActionRowFromButton(btn) {
+    let bar = btn?.parentElement;
+    for (let i = 0; i < 6 && bar; i++, bar = bar.parentElement) {
+      if (isGeminiResponseActionBar(bar)) return bar;
+    }
+    return null;
+  }
+
+  function isGeminiResponseActionBar(bar) {
+    if (!bar) return false;
+    const buttons = Array.from(bar.querySelectorAll('button'));
+    if (buttons.length < 2) return false;
+
+    const labels = buttons.map(btn =>
+      (btn.getAttribute('aria-label') || btn.getAttribute('data-tooltip') || btn.textContent || '').toLowerCase()
+    );
+    const hasDownload = labels.some(label => label.includes('download'));
+    const hasFeedback = labels.some(label =>
+      label.includes('thumb') ||
+      label.includes('like') ||
+      label.includes('dislike') ||
+      label.includes('good') ||
+      label.includes('bad')
+    );
+    const hasResponseUtility = labels.some(label =>
+      label.includes('share') ||
+      label.includes('more') ||
+      label.includes('option')
+    );
+
+    return !hasDownload && hasSingleGeminiButtonRow(buttons) && (hasFeedback || hasResponseUtility);
+  }
+
+  function hasSingleGeminiButtonRow(buttons) {
+    const centers = buttons
+      .map(btn => btn.getBoundingClientRect())
+      .filter(rect => rect.width > 0 && rect.height > 0)
+      .map(rect => rect.top + rect.height / 2);
+
+    if (centers.length < 2) return true;
+    return Math.max(...centers) - Math.min(...centers) <= 28;
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1396,9 +1522,14 @@
     const labelSpan = btn.querySelector('.cgd-btn-label');
     if (!pathSpan || !labelSpan) return;
     if (exportDest === 'local') {
-      pathSpan.textContent = '💾 Local';
+      pathSpan.innerHTML = DOCX_ICON_SVG + '<span>Export .docx</span>';
+      btn.title = 'Export as Word file';
+    } else if (exportDest === 'markdown') {
+      pathSpan.innerHTML = MARKDOWN_ICON_SVG + '<span>Export .md</span>';
+      btn.title = 'Export as Markdown';
     } else {
-      pathSpan.textContent = '☁️ Google Drive';
+      pathSpan.innerHTML = DRIVE_ICON_SVG + '<span>Export</span>';
+      btn.title = 'Export to Google Docs';
     }
     labelSpan.textContent = '';
     labelSpan.style.display = 'none';
@@ -1408,7 +1539,6 @@
     const btn = document.createElement('button');
     btn.className = BUTTON_CLASS;
 
-    const svgFile = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
     const svgChevron = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>`;
 
     const pathSpan = document.createElement('span');
@@ -1417,7 +1547,6 @@
     const labelSpan = document.createElement('span');
     labelSpan.className = 'cgd-btn-label';
 
-    btn.insertAdjacentHTML('beforeend', svgFile);
     btn.appendChild(pathSpan);
     btn.appendChild(labelSpan);
     btn.insertAdjacentHTML('beforeend', svgChevron);
@@ -1447,12 +1576,11 @@
       if (!actionBar) continue;
       if (actionBar.querySelector('.' + BUTTON_CLASS)) continue;
 
-      // Walk up from action bar to find the first container that has a
-      // font-claude-response descendant (the copy button is a sibling of the
-      // response content, not a descendant, so we search from the container level)
+      // Walk up from the action bar to find the first ancestor containing a
+      // `.standard-markdown` element — that's the AI response body in current Claude.
       let responseContainer = actionBar.parentElement;
       for (let i = 0; i < 10 && responseContainer && responseContainer !== document.body; i++) {
-        if (responseContainer.querySelector('[class*="font-claude-response"]')) break;
+        if (responseContainer.querySelector('.standard-markdown')) break;
         responseContainer = responseContainer.parentElement;
       }
       if (!responseContainer || responseContainer === document.body) continue;
@@ -1460,11 +1588,10 @@
       // Skip user message containers
       if (responseContainer.querySelector('[class*="font-user-message"]')) continue;
 
-      // Find the content element with multiple fallbacks
+      // Click handler runs against the response prose itself.
       const contentEl =
-        responseContainer.querySelector('[class*="font-claude-response"]') ||
-        responseContainer.querySelector('.prose') ||
-        responseContainer.querySelector('[data-is-streaming]') ||
+        responseContainer.querySelector('.standard-markdown') ||
+        responseContainer.querySelector('[class*="markdown"]') ||
         responseContainer;
 
       const btn = createExportButton();
