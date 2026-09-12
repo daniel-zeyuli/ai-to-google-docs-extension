@@ -13,6 +13,7 @@
   const isGemini = location.hostname.includes('gemini.google.com');
   const isChatGPT = location.hostname.includes('chatgpt.com') || location.hostname.includes('chat.openai.com');
   const isClaude = location.hostname.includes('claude.ai');
+  const isDeepSeek = location.hostname.includes('chat.deepseek.com');
 
   const DRIVE_ICON_SVG = `<svg width="15" height="13" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:inline-block;vertical-align:text-bottom"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066DA"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0-1.2 4.5h27.5z" fill="#00AC47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#EA4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832D"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684FC"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#FFBA00"/></svg>`;
   const DOCX_ICON_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:inline-block;vertical-align:text-bottom"><rect x="2" y="1" width="20" height="22" rx="2" fill="#2B579A"/><path d="M7 9.5l1.5 5 1.5-3.5 1.5 3.5 1.5-5" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
@@ -368,6 +369,10 @@
         contentDiv = messageEl.querySelector('.standard-markdown') ||
                      messageEl.querySelector('[class*="markdown"]') ||
                      messageEl;
+      } else if (isDeepSeek) {
+        contentDiv = messageEl.querySelector('.ds-markdown') ||
+                     messageEl.querySelector('[class*="markdown"]') ||
+                     messageEl;
       } else {
         contentDiv = messageEl;
       }
@@ -538,13 +543,18 @@
                  document.querySelector('[class*="ConversationTitle"]') ||
                  document.querySelector('nav a[class*="active"] [class*="truncate"]');
       if (el) title = el.textContent.trim();
+    } else if (isDeepSeek) {
+      const el = document.querySelector('[class*="chat-title"]') ||
+                 document.querySelector('[class*="conversation-title"]') ||
+                 document.querySelector('nav [aria-current="page"]');
+      if (el) title = el.textContent.trim();
     }
 
     // Fallback: strip platform suffix from document.title
     if (!title) {
       title = document.title
-        .replace(/\s*[-|–]\s*(Google\s+)?(ChatGPT|Claude|Gemini)\s*$/i, '')
-        .replace(/^(Google\s+)?(ChatGPT|Claude|Gemini)\s*[-|–]?\s*/i, '')
+        .replace(/\s*[-|–]\s*(Google\s+)?(ChatGPT|Claude|Gemini|DeepSeek)\s*$/i, '')
+        .replace(/^(Google\s+)?(ChatGPT|Claude|Gemini|DeepSeek)\s*[-|–]?\s*/i, '')
         .trim();
     }
 
@@ -604,11 +614,11 @@
     // Header: metadata line + MLA citation line (top of doc — survives appends).
     const now = new Date();
     const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-    const platformName = isGemini ? 'Gemini' : isClaude ? 'Claude' : 'ChatGPT';
+    const platformName = isGemini ? 'Gemini' : isClaude ? 'Claude' : isDeepSeek ? 'DeepSeek' : 'ChatGPT';
     const convTitle = getConversationTitle();
     const metaParts = [platformName, dateStr, ...(convTitle ? [convTitle] : [])];
     const sourceUrl = location.origin + location.pathname;
-    const vendor = isGemini ? 'Google' : isClaude ? 'Anthropic' : 'OpenAI';
+    const vendor = isGemini ? 'Google' : isClaude ? 'Anthropic' : isDeepSeek ? 'DeepSeek' : 'OpenAI';
     const mlaMonths = ['Jan.','Feb.','Mar.','Apr.','May','June','July','Aug.','Sept.','Oct.','Nov.','Dec.'];
     const mlaDate = `${now.getDate()} ${mlaMonths[now.getMonth()]} ${now.getFullYear()}`;
     const citeTitle = convTitle || 'AI conversation';
@@ -819,6 +829,18 @@
         const text = extractMarkdown(el).trim();
         if (text) turns.push({ role, text });
       }
+    } else if (isDeepSeek) {
+      const userEls = Array.from(document.querySelectorAll('[class*="user-message"], [class*="human-message"]'))
+        .filter(el => !el.parentElement?.closest('[class*="user-message"], [class*="human-message"]'));
+      const aiEls = _deepSeekFindResponses();
+      const all = [
+        ...userEls.map(el => ({ el, role: 'You' })),
+        ...aiEls.map(el => ({ el, role: 'DeepSeek' }))
+      ].sort((a, b) => a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+      for (const { el, role } of all) {
+        const text = extractMarkdown(el).trim();
+        if (text) turns.push({ role, text });
+      }
     }
 
     if (turns.length === 0) {
@@ -904,7 +926,18 @@
         .filter(el => !el.parentElement?.closest('message-content[data-content-type="model"]'));
     }
     if (isClaude) return _claudeFindResponses();
+    if (isDeepSeek) return _deepSeekFindResponses();
     return [];
+  }
+
+  function _deepSeekFindResponses() {
+    const candidates = Array.from(document.querySelectorAll('.ds-markdown'));
+    if (candidates.length > 0) {
+      return candidates.filter(el => !el.parentElement?.closest('.ds-markdown'));
+    }
+    return Array.from(document.querySelectorAll(
+      '[class*="assistant"] [class*="markdown"], [class*="bot"] [class*="markdown"]'
+    )).filter(el => !el.parentElement?.closest('[class*="markdown"]'));
   }
 
   // Robust Claude response finder. Primary signal is `.standard-markdown` — Claude's
@@ -1746,6 +1779,41 @@
   }
 
   // ═══════════════════════════════════════════════════════════════
+  //  DEEPSEEK: INJECT BUTTONS
+  // ═══════════════════════════════════════════════════════════════
+
+  function addDeepSeekButtons() {
+    const responses = _deepSeekFindResponses();
+    for (const resp of responses) {
+      // Walk up to find the message-level container
+      const container = resp.closest('[class*="message"]') ||
+                        resp.closest('[class*="chat-message"]') ||
+                        resp.parentElement;
+      if (!container) continue;
+      if (container.querySelector('.' + BUTTON_CLASS)) continue;
+
+      // Find action bar via copy button
+      const copyBtn = container.querySelector(
+        'button[aria-label*="copy" i], button[title*="copy" i], ' +
+        'button[class*="copy"], span[class*="copy"]'
+      );
+      if (!copyBtn) continue;
+
+      // Walk up to find a bar that has multiple buttons (feedback + copy)
+      let actionBar = copyBtn.parentElement;
+      for (let i = 0; i < 5 && actionBar; i++) {
+        if (actionBar.querySelectorAll('button, span[role="button"]').length >= 2) break;
+        actionBar = actionBar.parentElement;
+      }
+      if (!actionBar || actionBar.querySelector('.' + BUTTON_CLASS)) continue;
+
+      const btn = createExportButton();
+      btn.addEventListener('click', (e) => handleExportClick(e, resp));
+      actionBar.appendChild(btn);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   //  INIT
   // ═══════════════════════════════════════════════════════════════
 
@@ -1753,6 +1821,7 @@
     if (isChatGPT) addChatGPTButtons();
     if (isGemini) addGeminiButtons();
     if (isClaude) addClaudeButtons();
+    if (isDeepSeek) addDeepSeekButtons();
 
     // Gemini / URL-invariant: close panel when anchor leaves DOM
     const panel = document.querySelector('.cgd-panel');
