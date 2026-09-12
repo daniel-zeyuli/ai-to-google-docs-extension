@@ -56,6 +56,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // ── Context menu: export selected text ──
+chrome.runtime.setUninstallURL('https://docs.google.com/forms/d/e/1FAIpQLSeOIzgm06tnL3OPgGbcML5TNHTw3lARi1eSei5v9qA34FWV7g/viewform');
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'cgd-export-selection',
