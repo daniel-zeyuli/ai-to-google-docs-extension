@@ -295,6 +295,13 @@ function cleanOrphanMarkers(text) {
     return `\x00MATH${mathSegments.length - 1}\x00`;
   });
 
+  // Protect **bold** FIRST — italic regex would otherwise split ** into two single *
+  const boldSegments = [];
+  cleaned = cleaned.replace(/\*\*(?:[^*]|\*(?!\*))+\*\*/g, (match) => {
+    boldSegments.push(match);
+    return `\x00BOLD${boldSegments.length - 1}\x00`;
+  });
+
   // Protect valid italic: *text* (single * pairs with content)
   const italicSegments = [];
   cleaned = cleaned.replace(/\*([^*]+)\*/g, (match) => {
@@ -312,6 +319,9 @@ function cleanOrphanMarkers(text) {
 
   // Restore italic segments
   cleaned = cleaned.replace(/\x00ITAL(\d+)\x00/g, (_, idx) => italicSegments[parseInt(idx)]);
+
+  // Restore bold segments
+  cleaned = cleaned.replace(/\x00BOLD(\d+)\x00/g, (_, idx) => boldSegments[parseInt(idx)]);
 
   // Restore math segments
   cleaned = cleaned.replace(/\x00MATH(\d+)\x00/g, (_, idx) => mathSegments[parseInt(idx)]);
@@ -372,8 +382,8 @@ function _buildMixedContentText(text) {
         } else if (seg.italic) {
           result += `<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve">${escapeXml(clean)}</w:t></w:r>`;
         } else {
-          // Plain segment — check for nested bold/italic without math
-          result += buildFormattedTextRuns(clean);
+          // Plain segment — let buildFormattedTextRuns handle bold/italic as a fallback
+          result += buildFormattedTextRuns(run.text);
         }
       }
     }

@@ -1,0 +1,507 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --ink: #111827;
+      --muted: #667085;
+      --line: #e2e8f0;
+      --blue: #1a73e8;
+      --green: #17a05e;
+      --paper: #ffffff;
+      --soft: #f5f8ff;
+      --shadow: 0 28px 70px rgba(17, 24, 39, 0.18);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      width: 1280px;
+      height: 800px;
+      overflow: hidden;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 82% 18%, rgba(22, 163, 74, 0.16), transparent 30%),
+        radial-gradient(circle at 16% 18%, rgba(26, 115, 232, 0.18), transparent 32%),
+        linear-gradient(135deg, #f7fbff 0%, #edf4ff 54%, #f7fff9 100%);
+    }
+
+    .stage {
+      position: relative;
+      width: 1280px;
+      height: 800px;
+      padding: 54px 68px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      height: 32px;
+      padding: 0 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(26, 115, 232, 0.16);
+      color: #2456a6;
+      font-size: 14px;
+      font-weight: 800;
+      box-shadow: 0 12px 30px rgba(26, 115, 232, 0.08);
+    }
+
+    h1 {
+      margin: 18px 0 8px;
+      width: 640px;
+      font-size: 66px;
+      line-height: 0.96;
+      letter-spacing: 0;
+    }
+
+    .sub {
+      margin: 0;
+      width: 560px;
+      color: var(--muted);
+      font-size: 22px;
+      line-height: 1.35;
+      font-weight: 500;
+    }
+
+    .workspace {
+      position: absolute;
+      left: 68px;
+      right: 68px;
+      bottom: 54px;
+      height: 430px;
+      display: grid;
+      grid-template-columns: 502px 104px 1fr;
+      align-items: center;
+      gap: 26px;
+    }
+
+    .card {
+      background: var(--paper);
+      border: 1px solid rgba(148, 163, 184, 0.34);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .chat-card {
+      height: 396px;
+      position: relative;
+    }
+
+    .chrome {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 16px;
+      background: #f1f5f9;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #cbd5e1;
+    }
+
+    .dot.red { background: #ff5f57; }
+    .dot.yellow { background: #ffbd2e; }
+    .dot.green { background: #28c840; }
+
+    .url {
+      flex: 1;
+      height: 30px;
+      border-radius: 999px;
+      background: white;
+      border: 1px solid #e2e8f0;
+      color: #8a94a6;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .chat-body {
+      padding: 28px 28px 86px;
+    }
+
+    .ai-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: #111827;
+      color: white;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .response-title {
+      font-size: 18px;
+      font-weight: 850;
+    }
+
+    .lines {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    .line {
+      height: 14px;
+      border-radius: 999px;
+      background: #e8eef7;
+    }
+
+    .line.w1 { width: 92%; }
+    .line.w2 { width: 77%; }
+    .line.w3 { width: 86%; }
+
+    .mini-table {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border: 1px solid #e1e8f2;
+      border-radius: 14px;
+      overflow: hidden;
+      margin-bottom: 0;
+    }
+
+    .cell {
+      min-height: 42px;
+      padding: 11px 12px;
+      border-right: 1px solid #e1e8f2;
+      border-bottom: 1px solid #e1e8f2;
+      font-size: 13px;
+      color: #5b6678;
+      font-weight: 650;
+    }
+
+    .cell:nth-child(2n) { border-right: none; }
+    .cell:nth-last-child(-n+2) { border-bottom: none; }
+    .cell.head {
+      background: #edf5ff;
+      color: #1c56a8;
+      font-weight: 850;
+    }
+
+    .export-row {
+      position: absolute;
+      left: 118px;
+      bottom: 28px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .small-action {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      border: 1px solid #e2e8f0;
+      color: #98a2b3;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      background: white;
+    }
+
+    .export-btn {
+      height: 46px;
+      display: inline-flex;
+      align-items: center;
+      gap: 11px;
+      padding: 0 17px;
+      border-radius: 14px;
+      border: 2px solid rgba(26, 115, 232, 0.22);
+      background: #f3f8ff;
+      color: #596579;
+      font-size: 20px;
+      font-weight: 850;
+      box-shadow: 0 16px 34px rgba(26, 115, 232, 0.18);
+    }
+
+    .drive-icon {
+      width: 27px;
+      height: 24px;
+      flex: 0 0 auto;
+    }
+
+    .chev {
+      width: 14px;
+      height: 14px;
+      color: #9aa4b5;
+      margin-left: 1px;
+    }
+
+    .arrow-zone {
+      height: 100%;
+      display: grid;
+      place-items: center;
+    }
+
+    .arrow-circle {
+      width: 92px;
+      height: 92px;
+      border-radius: 50%;
+      background: white;
+      border: 1px solid rgba(26, 115, 232, 0.18);
+      box-shadow: 0 18px 45px rgba(26, 115, 232, 0.16);
+      display: grid;
+      place-items: center;
+    }
+
+    .doc-card {
+      height: 396px;
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      overflow: hidden;
+    }
+
+    .doc-rail {
+      background: #f8fbff;
+      border-right: 1px solid #e5ebf3;
+      display: flex;
+      justify-content: center;
+      padding-top: 28px;
+    }
+
+    .docs-icon {
+      width: 52px;
+      height: 66px;
+      border-radius: 8px;
+      background: var(--blue);
+      position: relative;
+      box-shadow: 0 14px 30px rgba(26, 115, 232, 0.24);
+    }
+
+    .docs-icon:before {
+      content: "";
+      position: absolute;
+      right: 0;
+      top: 0;
+      border-top: 16px solid #b9d5ff;
+      border-left: 16px solid transparent;
+    }
+
+    .docs-icon:after {
+      content: "";
+      position: absolute;
+      left: 13px;
+      top: 24px;
+      width: 26px;
+      height: 4px;
+      border-radius: 999px;
+      background: white;
+      box-shadow: 0 10px 0 white, 0 20px 0 white;
+    }
+
+    .doc-body {
+      padding: 34px 36px;
+      background: white;
+    }
+
+    .doc-kicker {
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .doc-title {
+      font-size: 32px;
+      line-height: 1.08;
+      font-weight: 900;
+      width: 360px;
+      margin-bottom: 22px;
+    }
+
+    .doc-line {
+      height: 13px;
+      border-radius: 999px;
+      background: #e8eef7;
+      margin-bottom: 12px;
+    }
+
+    .doc-line.a { width: 88%; }
+    .doc-line.b { width: 70%; }
+    .doc-line.c { width: 78%; }
+
+    .doc-table {
+      margin-top: 26px;
+      border: 1px solid #dfe7f2;
+      border-radius: 14px;
+      overflow: hidden;
+      width: 320px;
+    }
+
+    .doc-table-row {
+      height: 36px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-bottom: 1px solid #dfe7f2;
+    }
+
+    .doc-table-row:last-child { border-bottom: none; }
+
+    .doc-table-row span {
+      border-right: 1px solid #dfe7f2;
+      background: #f8fbff;
+    }
+
+    .doc-table-row span:last-child { border-right: none; }
+
+    .formats {
+      position: absolute;
+      right: 82px;
+      top: 84px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .pill {
+      height: 38px;
+      padding: 0 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      box-shadow: 0 12px 30px rgba(17, 24, 39, 0.08);
+      color: #475467;
+      display: flex;
+      align-items: center;
+      font-size: 14px;
+      font-weight: 850;
+    }
+
+    .callout {
+      position: absolute;
+      right: 86px;
+      top: 148px;
+      width: 330px;
+      border-radius: 22px;
+      background: #111827;
+      color: white;
+      padding: 21px 23px;
+      box-shadow: 0 24px 60px rgba(17, 24, 39, 0.24);
+    }
+
+    .callout strong {
+      display: block;
+      font-size: 24px;
+      line-height: 1.1;
+      margin-bottom: 8px;
+    }
+
+    .callout span {
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 15px;
+      line-height: 1.35;
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="brand">ChatGPT to Google Docs - Export Gemini & Claude</div>
+    <h1>Export ChatGPT to Google Docs.</h1>
+    <p class="sub">One click turns AI answers into clean, editable documents.</p>
+
+    <div class="formats">
+      <div class="pill">Google Docs</div>
+      <div class="pill">Word</div>
+      <div class="pill">Markdown</div>
+    </div>
+
+    <div class="callout">
+      <strong>No copy-paste cleanup.</strong>
+      <span>Keep tables, code, math, and formatting.</span>
+    </div>
+
+    <div class="workspace">
+      <div class="card chat-card">
+        <div class="chrome">
+          <span class="dot red"></span>
+          <span class="dot yellow"></span>
+          <span class="dot green"></span>
+          <div class="url">chatgpt.com</div>
+        </div>
+        <div class="chat-body">
+          <div class="ai-row">
+            <div class="avatar">AI</div>
+            <div class="response-title">Research summary</div>
+          </div>
+
+          <div class="lines">
+            <div class="line w1"></div>
+            <div class="line w2"></div>
+            <div class="line w3"></div>
+          </div>
+
+          <div class="mini-table">
+            <div class="cell head">Topic</div>
+            <div class="cell head">Notes</div>
+            <div class="cell">Evidence</div>
+            <div class="cell">3 sources</div>
+            <div class="cell">Formula</div>
+            <div class="cell">F = m x a</div>
+          </div>
+
+          <div class="export-row">
+            <div class="small-action">C</div>
+            <div class="small-action">...</div>
+            <div class="export-btn">
+              <svg class="drive-icon" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066DA"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0-1.2 4.5h27.5z" fill="#00AC47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#EA4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832D"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684FC"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#FFBA00"/></svg>
+              <span>Export</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none">
+                <path d="M7 10L12 15L17 10" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="arrow-zone">
+        <div class="arrow-circle">
+          <svg width="54" height="34" viewBox="0 0 54 34" fill="none">
+            <path d="M4 17H46" stroke="#1a73e8" stroke-width="6" stroke-linecap="round"/>
+            <path d="M34 5L47 17L34 29" stroke="#1a73e8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="card doc-card">
+        <div class="doc-rail">
+          <div class="docs-icon"></div>
+        </div>
+        <div class="doc-body">
+          <div class="doc-kicker">Google Docs</div>
+          <div class="doc-title">Clean editable document</div>
+          <div class="doc-line a"></div>
+          <div class="doc-line b"></div>
+          <div class="doc-line c"></div>
+          <div class="doc-table">
+            <div class="doc-table-row"><span></span><span></span></div>
+            <div class="doc-table-row"><span></span><span></span></div>
+            <div class="doc-table-row"><span></span><span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

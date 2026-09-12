@@ -97,13 +97,6 @@
     }
     .save-opt.active .save-title  { color: var(--blue); }
     .save-opt.active .save-detail { color: var(--blue); opacity: 0.75; }
-    .save-change {
-      background: none; border: none; color: var(--muted);
-      font-size: 16px; font-weight: 300;
-      cursor: pointer; padding: 1px 5px; border-radius: 5px;
-      flex-shrink: 0; transition: all 0.13s; line-height: 1;
-    }
-    .save-change:hover { background: var(--blue-bg); color: var(--blue); }
 
     /* ── Mode section ── */
     .mode-section { padding: 8px 12px 9px; border-bottom: 1px solid var(--border); }
@@ -143,6 +136,39 @@
       font-size: 11px; color: var(--blue); cursor: pointer; padding: 0;
     }
     .shortcut-link:hover { text-decoration: underline; }
+    .feedback-section {
+      padding: 4px 10px 10px;
+      text-align: center;
+    }
+    .feedback-link {
+      background: none; border: none;
+      font-size: 11px; color: var(--muted);
+      cursor: pointer; padding: 0;
+      transition: color 0.15s;
+    }
+    .feedback-link:hover { color: var(--blue); text-decoration: underline; }
+    .pro-section {
+      padding: 7px 10px 7px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+    }
+    .pro-btn {
+      width: 100%;
+      padding: 7px 0;
+      background: var(--blue-bg);
+      color: var(--blue);
+      border: 1px solid transparent;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      letter-spacing: 0.1px;
+    }
+    .pro-btn:hover {
+      background: var(--blue);
+      color: #fff;
+    }
   </style>
 </head>
 <body>
@@ -150,54 +176,71 @@
 <div class="header">
   <img src="icons/icon48.png" alt="">
   <div class="header-text">
-    <div class="header-title">AI Chat Exporter</div>
-    <div class="header-sub">for Google Docs</div>
+    <div class="header-title" data-i18n="popupTitle">AI Chat Exporter</div>
+    <div class="header-sub" data-i18n="popupSubtitle">for Google Docs</div>
   </div>
-  <span class="version-badge">3.9.2</span>
+  <span class="version-badge">4.2.0</span>
 </div>
 
 <hr>
 
 <!-- Save to -->
 <div class="save-section">
-  <div class="section-label">Save to</div>
+  <div class="section-label" data-i18n="saveTo">Save to</div>
   <div class="save-opt active" id="opt-drive" data-dest="drive">
     <span class="save-radio"></span>
     <span class="save-icon">☁️</span>
     <div class="save-info">
-      <span class="save-title">Google Drive</span>
-      <span class="save-detail" id="drive-detail">AI Chat Exports</span>
+      <span class="save-title" data-i18n="driveTitle">Google Drive</span>
+      <span class="save-detail" data-i18n="driveDetail">AI Chat Exports</span>
     </div>
-    <button class="save-change" id="change-folder" title="Change folder">›</button>
   </div>
   <div class="save-opt" id="opt-local" data-dest="local">
     <span class="save-radio"></span>
     <span class="save-icon">💾</span>
     <div class="save-info">
-      <span class="save-title">Local .docx</span>
-      <span class="save-detail">Save as file</span>
+      <span class="save-title" data-i18n="localTitle">Local .docx</span>
+      <span class="save-detail" data-i18n="localDetail">Save as Word file</span>
+    </div>
+  </div>
+  <div class="save-opt" id="opt-md" data-dest="markdown">
+    <span class="save-radio"></span>
+    <span class="save-icon">📝</span>
+    <div class="save-info">
+      <span class="save-title" data-i18n="mdTitle">Markdown .md</span>
+      <span class="save-detail" data-i18n="mdDetail">Save as plain markdown</span>
     </div>
   </div>
 </div>
 
 <!-- Default mode -->
 <div class="mode-section">
-  <div class="section-label">Default mode</div>
+  <div class="section-label" data-i18n="defaultMode">Default mode</div>
   <div class="mode-strip">
-    <button class="mode-tab" data-mode="last">↩ Last</button>
-    <button class="mode-tab" data-mode="full">≡ Full</button>
-    <button class="mode-tab" data-mode="select">☑ Pick</button>
+    <button class="mode-tab" data-mode="last" data-i18n="modeLast">↩ Last</button>
+    <button class="mode-tab" data-mode="full" data-i18n="modeFull">≡ Full</button>
+    <button class="mode-tab" data-mode="select" data-i18n="modePick">☑ Pick</button>
   </div>
   <div class="mode-hint" id="mode-hint"></div>
 </div>
 
 <!-- Keyboard shortcut -->
 <div class="shortcut-section">
-  <div class="section-label">Keyboard shortcut</div>
+  <div class="section-label" data-i18n="shortcut">Keyboard shortcut</div>
   <div class="shortcut-row">
     <kbd class="shortcut-display" id="shortcut-display">⌘⇧E</kbd>
-    <button class="shortcut-link" id="shortcut-customize">Customize →</button>
+    <button class="shortcut-link" id="shortcut-customize" data-i18n="customize">Customize →</button>
   </div>
+</div>
+
+<!-- Pro interest -->
+<div class="pro-section">
+  <button class="pro-btn" id="proBtn">✨ Get Pro</button>
+</div>
+
+<!-- Feedback -->
+<div class="feedback-section">
+  <button class="feedback-link" id="feedbackBtn" data-i18n="feedbackLabel"></button>
 </div>
 
 <script src="popup.js"></script>

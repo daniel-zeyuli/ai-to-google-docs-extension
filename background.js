@@ -5,7 +5,7 @@
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'uploadToDrive') {
-    handleUpload(request.docxBase64, request.filename, request.platform)
+    handleUpload(request.docxBase64, request.filename, request.platform, request.docTitle)
       .then(result => sendResponse(result))
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
@@ -55,6 +55,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 });
 
+// ── Context menu: export selected text ──
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: 'cgd-export-selection',
+    title: 'Export to Docs',
+    contexts: ['selection']
+  });
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'cgd-export-selection' && tab?.id) {
+    chrome.tabs.sendMessage(tab.id, { action: 'exportSelection' }, () => {
+      void chrome.runtime.lastError;
+    });
+  }
+});
+
 // ── Keyboard shortcut: forward to active tab's content script ──
 chrome.commands.onCommand.addListener((command) => {
   if (command === 'trigger-export') {
@@ -85,7 +102,7 @@ function removeCachedToken(token) {
 // ── Fetch image via background worker (bypasses content script CORS) ──
 async function fetchImageAsBase64(url) {
   try {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { credentials: 'include' });
     if (!resp.ok) return { success: false };
     const blob = await resp.blob();
     const bitmap = await createImageBitmap(blob);
@@ -184,7 +201,7 @@ async function _getOrCreateFolder(token, name, parentId, storageKey) {
 }
 
 // ── Drive upload ──
-async function handleUpload(docxBase64, filename, platform) {
+async function handleUpload(docxBase64, filename, platform, docTitle) {
   let token;
   try {
     token = await getAuthToken(true);
@@ -220,7 +237,7 @@ async function handleUpload(docxBase64, filename, platform) {
   const folderId = await getOrCreateExportFolder(token, platform);
 
   const metadata = {
-    name: filename.replace('.docx', ''),
+    name: docTitle || filename.replace('.docx', ''),
     mimeType: 'application/vnd.google-apps.document',
     ...(folderId ? { parents: [folderId] } : {})
   };
@@ -285,7 +302,7 @@ async function handleUpload(docxBase64, filename, platform) {
   };
 }
 
-// ── Docs API: append text to existing Google Doc ──
+// ── Docs API: append formatted text to existing Google Doc ──
 async function appendContent(fileId, text) {
   let token;
   try { token = await getAuthToken(true); }
@@ -293,17 +310,55 @@ async function appendContent(fileId, text) {
 
   const now = new Date();
   const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-  const separator = '\n\n────────────────────────────────────────\n\n';
-  const insertText = separator + 'Added ' + dateStr + '\n\n' + text;
+  const separator = '\n\n────────────────────────────────────────\n\nAdded ' + dateStr + '\n\n';
+
+  // GET document endIndex so insertText + updateTextStyle indices are exact.
+  let insertStart = null;
+  try {
+    const getResp = await fetch(
+      `https://docs.googleapis.com/v1/documents/${fileId}?fields=body.content`,
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    if (getResp.ok) {
+      const doc = await getResp.json();
+      const content = doc?.body?.content;
+      if (content && content.length > 0) {
+        insertStart = content[content.length - 1].endIndex - 1;
+      }
+    }
+  } catch (_) { /* fallback below */ }
+
+  let requests;
+  if (insertStart !== null && insertStart >= 0) {
+    const { plainText, formats } = markdownToDocsRuns(text);
+    const fullText = separator + plainText;
+    const contentOffset = insertStart + separator.length;
+    requests = [
+      { insertText: { location: { index: insertStart }, text: fullText } }
+    ];
+    for (const fmt of formats) {
+      const s = contentOffset + fmt.start;
+      const e = contentOffset + fmt.end;
+      if (s >= e) continue;
+      if (fmt.type === 'bold') {
+        requests.push({ updateTextStyle: { range: { startIndex: s, endIndex: e }, textStyle: { bold: true }, fields: 'bold' } });
+      } else if (fmt.type === 'italic') {
+        requests.push({ updateTextStyle: { range: { startIndex: s, endIndex: e }, textStyle: { italic: true }, fields: 'italic' } });
+      } else if (fmt.type === 'heading') {
+        requests.push({ updateParagraphStyle: { range: { startIndex: s, endIndex: e }, paragraphStyle: { namedStyleType: 'HEADING_' + fmt.level }, fields: 'namedStyleType' } });
+      }
+    }
+  } else {
+    // Fallback: plain text insertion (no formatting).
+    requests = [{ insertText: { endOfSegmentLocation: { segmentId: '' }, text: separator + text } }];
+  }
 
   const docsRequest = async (tok) => fetch(
     `https://docs.googleapis.com/v1/documents/${fileId}:batchUpdate`,
     {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requests: [{ insertText: { endOfSegmentLocation: { segmentId: '' }, text: insertText } }]
-      })
+      body: JSON.stringify({ requests })
     }
   );
 
@@ -326,6 +381,116 @@ async function appendContent(fileId, text) {
   }
 
   return { success: true };
+}
+
+// ── Convert markdown to plain text + Docs API format ranges ──
+function markdownToDocsRuns(markdown) {
+  const cleaned = markdown.replace(/\[\[IMG:\d+\]\]/g, '').replace(/\n{3,}/g, '\n\n');
+  const lines = cleaned.split('\n');
+  let plainText = '';
+  const formats = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Code block
+    if (line.startsWith('```')) {
+      i++;
+      while (i < lines.length && !lines[i].startsWith('```')) {
+        plainText += '    ' + lines[i] + '\n';
+        i++;
+      }
+      continue;
+    }
+
+    // Heading
+    const hm = line.match(/^(#{1,6})\s+(.+)$/);
+    if (hm) {
+      const hStart = plainText.length;
+      const { plain, fmts } = parseInlineRuns(hm[2], hStart);
+      plainText += plain + '\n';
+      formats.push({ type: 'heading', level: hm[1].length, start: hStart, end: plainText.length });
+      formats.push(...fmts);
+      continue;
+    }
+
+    // Empty line
+    if (!line.trim()) { plainText += '\n'; continue; }
+
+    // Unordered list item
+    const ulm = line.match(/^[-*+]\s+(.+)$/);
+    if (ulm) {
+      const lStart = plainText.length;
+      plainText += '• ';
+      const { plain, fmts } = parseInlineRuns(ulm[1], lStart + 2);
+      plainText += plain + '\n';
+      formats.push(...fmts);
+      continue;
+    }
+
+    // Ordered list item
+    const olm = line.match(/^(\d+\.)\s+(.+)$/);
+    if (olm) {
+      const prefix = olm[1] + ' ';
+      const lStart = plainText.length;
+      plainText += prefix;
+      const { plain, fmts } = parseInlineRuns(olm[2], lStart + prefix.length);
+      plainText += plain + '\n';
+      formats.push(...fmts);
+      continue;
+    }
+
+    // Normal paragraph line
+    const lStart = plainText.length;
+    const { plain, fmts } = parseInlineRuns(line, lStart);
+    plainText += plain + '\n';
+    formats.push(...fmts);
+  }
+
+  return { plainText, formats };
+}
+
+// ── Parse inline bold/italic/code, return stripped plain text + absolute format ranges ──
+function parseInlineRuns(text, basePos) {
+  const parts = [];
+  const fmts = [];
+  const regex = /(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*(?!\*|\s)[\s\S]+?(?<!\s|\*)\*(?!\*)|`[^`\n]+`)/g;
+  let lastIndex = 0;
+  let pos = 0;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    const before = text.slice(lastIndex, m.index);
+    parts.push(before);
+    pos += before.length;
+    const raw = m[0];
+    if (raw.startsWith('***')) {
+      const inner = raw.slice(3, -3);
+      const s = basePos + pos, e = s + inner.length;
+      parts.push(inner);
+      fmts.push({ type: 'bold', start: s, end: e });
+      fmts.push({ type: 'italic', start: s, end: e });
+      pos += inner.length;
+    } else if (raw.startsWith('**')) {
+      const inner = raw.slice(2, -2);
+      const s = basePos + pos, e = s + inner.length;
+      parts.push(inner);
+      fmts.push({ type: 'bold', start: s, end: e });
+      pos += inner.length;
+    } else if (raw.startsWith('`')) {
+      const inner = raw.slice(1, -1);
+      parts.push(inner);
+      pos += inner.length;
+    } else {
+      const inner = raw.slice(1, -1);
+      const s = basePos + pos, e = s + inner.length;
+      parts.push(inner);
+      fmts.push({ type: 'italic', start: s, end: e });
+      pos += inner.length;
+    }
+    lastIndex = m.index + raw.length;
+  }
+  parts.push(text.slice(lastIndex));
+  return { plain: parts.join(''), fmts };
 }
 
 // ── Build multipart body for Drive upload ──
@@ -352,4 +517,3 @@ function buildMultipartBody(boundary, metadata, fileBytes) {
   body.set(fileFooter, offset);
   return body;
 }
-

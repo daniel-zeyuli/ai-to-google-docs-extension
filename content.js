@@ -86,6 +86,92 @@
   let _imgIdx = 0;
   function _resetImgCaptures() { _imgCaptures.length = 0; _imgIdx = 0; }
 
+  // Shadow-piercing querySelector — needed for Gemini's single-image which puts <img>
+  // inside an open shadow root, invisible to regular querySelectorAll.
+  function _deepQueryAll(root, selector) {
+    const results = [];
+    const walk = (node) => {
+      if (!node) return;
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        try { if (node.matches(selector)) results.push(node); } catch (_) {}
+        if (node.shadowRoot) walk(node.shadowRoot);
+      } else if (node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE && node.nodeType !== Node.DOCUMENT_NODE) {
+        return;
+      }
+      for (const c of node.children || []) walk(c);
+    };
+    walk(root);
+    return results;
+  }
+
+  function _getImageSrc(imgEl) {
+    if (!imgEl) return '';
+    const direct = imgEl.currentSrc ||
+                   imgEl.src ||
+                   imgEl.dataset?.src ||
+                   imgEl.dataset?.originalSrc ||
+                   imgEl.getAttribute?.('src') ||
+                   '';
+    if (direct) return direct;
+
+    const srcset = imgEl.srcset || imgEl.getAttribute?.('srcset') || '';
+    if (!srcset) return '';
+    const candidates = srcset.split(',')
+      .map(part => part.trim().split(/\s+/)[0])
+      .filter(Boolean);
+    return candidates[candidates.length - 1] || '';
+  }
+
+  function _deepContains(root, node) {
+    if (!root || !node) return false;
+    let current = node;
+    while (current) {
+      if (current === root) return true;
+      if (current.parentNode) {
+        current = current.parentNode;
+        continue;
+      }
+      const host = current.getRootNode?.().host;
+      current = host || null;
+    }
+    return false;
+  }
+
+  function _addImageCapture(imgEl, alt, ignoreIfSmall = true) {
+    const src = _getImageSrc(imgEl);
+    if (!src || src.startsWith('data:image/svg')) return '';
+    if (src.includes('favicon')) return '';
+
+    const w = imgEl.naturalWidth, h = imgEl.naturalHeight;
+    if (ignoreIfSmall && w && h && w < 50 && h < 50) return '';
+
+    if (_imgCaptures.some(c => _getImageSrc(c.el) === src)) return '';
+    _imgCaptures.push({ idx: _imgIdx, el: imgEl, alt: alt || imgEl.getAttribute?.('alt') || 'Image' });
+    return `\n\n[[IMG:${_imgIdx++}]]\n\n`;
+  }
+
+  function _isLikelyGeminiGeneratedImage(imgEl) {
+    if (!imgEl) return false;
+    const className = String(imgEl.className || '');
+    if (className.includes('hero-image') || className.includes('spark-licensed')) return true;
+
+    const src = _getImageSrc(imgEl);
+    if (!src) return false;
+    const isGoogleImageHost = /(^https:\/\/[^/]*(?:gstatic|googleusercontent)\.com\/)/i.test(src);
+    if (!isGoogleImageHost) return false;
+
+    const w = imgEl.naturalWidth, h = imgEl.naturalHeight;
+    if (w && h) return w >= 120 && h >= 120;
+
+    const rect = imgEl.getBoundingClientRect?.();
+    return !!rect && rect.width >= 120 && rect.height >= 120;
+  }
+
+  let _lastNavPath = location.pathname;
+  let _panelAnchorEl = null;
+  let _shouldReopenPanel = false;
+  let _panelOpenedOnPath = null;
+
   async function _captureImages() {
     const map = {};
     for (const { idx, el, alt } of _imgCaptures) {
@@ -104,8 +190,8 @@
       }
       // Strategy 2: background worker fetch → OffscreenCanvas → PNG
       // Works for AI platform CDNs listed in host_permissions (oaiusercontent.com, googleusercontent.com)
-      const src = (el && (el.src || el.getAttribute('src'))) || '';
-      if (!src || src.startsWith('data:')) continue;
+      const src = _getImageSrc(el);
+      if (!src || src.startsWith('data:') || src.startsWith('blob:')) continue;
       try {
         const result = await new Promise(resolve => {
           chrome.runtime.sendMessage({ action: 'fetchImage', url: src }, resp => {
@@ -208,20 +294,23 @@
       if (tag === 'code' && !node.closest('pre')) return `\`${node.textContent}\``;
       if (tag === 'img') {
         const alt = node.getAttribute('alt') || node.getAttribute('aria-label') || '';
-        const src = node.src || node.getAttribute('src') || '';
-        if (src && !src.startsWith('data:image/svg')) {
-          _imgCaptures.push({ idx: _imgIdx, el: node, alt });
-          return `[[IMG:${_imgIdx++}]]`;
-        }
-        return alt || '[Image]';
+        return _addImageCapture(node, alt, false).trim();
       }
       if (tag === 'br') return '\n';
       if (tag === 'hr') return '\n---\n';
       if (tag === 'strong' || tag === 'b') return `**${getInner(node)}**`;
       if (tag === 'em' || tag === 'i') return `*${getInner(node)}*`;
-      if (tag === 'sub') return `~${getInner(node)}~`;
-      if (tag === 'sup') return `^${getInner(node)}^`;
+      if (tag === 'sub') { const i = getInner(node); return i ? `~${i}~` : ''; }
+      if (tag === 'sup') { const i = getInner(node); return i ? `^${i}^` : ''; }
       if (tag === 'table') return processTable(node);
+      if (tag === 'button' || tag === 'svg' || tag === 'select' || tag === 'input' || tag === 'textarea') return '';
+      if (tag === 'a') {
+        if (node.querySelector('img')) {
+          const inner = getInner(node);
+          return (inner.match(/\[\[IMG:\d+\]\]/g) || []).join('');
+        }
+        return getInner(node);
+      }
       return getInner(node);
     } catch(e) { return node.textContent || ''; }
   }
@@ -230,17 +319,23 @@
   function extractTeX(el) {
     // Try data-math attribute (Gemini)
     const dataMath = el.getAttribute('data-math');
-    if (dataMath) return dataMath.trim();
+    if (dataMath) return normalizeTeX(dataMath.trim());
     // Try annotation element (ChatGPT KaTeX)
     const ann = el.querySelector('annotation[encoding="application/x-tex"]');
-    if (ann) return ann.textContent.trim();
+    if (ann) return normalizeTeX(ann.textContent.trim());
     // Try MathJax script
     const script = el.querySelector('script[type="math/tex"], script[type="math/tex; mode=display"]');
-    if (script) return script.textContent.trim();
+    if (script) return normalizeTeX(script.textContent.trim());
     // Try other data attributes
     const formula = el.getAttribute('data-formula') || el.getAttribute('aria-label');
-    if (formula) return formula.trim();
+    if (formula) return normalizeTeX(formula.trim());
     return '';
+  }
+
+  function normalizeTeX(tex) {
+    // LaTeX starting with ^ or _ has no base atom (e.g. ^5C_2 for combination notation).
+    // Prepend {} so the OMML parser has a valid empty base: {}^5C_2 → pre-superscript ⁵C₂.
+    return (tex && /^[_^]/.test(tex)) ? '{}' + tex : tex;
   }
 
   function getInner(node) { let r = ''; for (const c of node.childNodes) r += processNode(c); return r; }
@@ -279,9 +374,50 @@
       let md = '';
       for (const child of contentDiv.childNodes) md += processNode(child);
 
+      // Claude image scan: look for images outside contentDiv (image search results, artifacts).
+      // When _claudeFindResponses returns .standard-markdown, contentDiv === messageEl,
+      // so we walk up to the parent to find sibling image containers.
+      if (isClaude) {
+        let scanRoot = messageEl;
+        for (let i = 0; i < 4; i++) {
+          if (!scanRoot.parentElement || scanRoot.parentElement === document.body) break;
+          scanRoot = scanRoot.parentElement;
+        }
+        if (scanRoot && scanRoot !== document.body) {
+          for (const imgEl of scanRoot.querySelectorAll('img')) {
+            if (contentDiv.contains(imgEl)) continue;
+            md += _addImageCapture(imgEl, imgEl.getAttribute('alt') || 'Image');
+          }
+        }
+      }
+
+      // Gemini image scan: generated images live in single-image > image-button siblings of model-response,
+      // both of which are direct children of response-element (confirmed via DevTools DOM trace).
+      if (isGemini) {
+        const msgScope = messageEl.closest('response-element') ||
+                         messageEl.closest('message-content') ||
+                         messageEl.parentElement ||
+                         messageEl;
+        const beforeGeminiImages = _imgCaptures.length;
+        for (const imgEl of _deepQueryAll(msgScope, 'img')) {
+          if (_deepContains(contentDiv, imgEl)) continue;
+          md += _addImageCapture(imgEl, imgEl.getAttribute('alt') || 'Image');
+        }
+
+        // Defensive fallback: if Gemini changes where single-image is attached, scan all
+        // open-shadow images and keep only generated-looking images that belong to this turn.
+        if (_imgCaptures.length === beforeGeminiImages) {
+          for (const imgEl of _deepQueryAll(document, 'img')) {
+            if (!_isLikelyGeminiGeneratedImage(imgEl)) continue;
+            if (!_deepContains(msgScope, imgEl)) continue;
+            md += _addImageCapture(imgEl, imgEl.getAttribute('alt') || 'Image');
+          }
+        }
+      }
+
       // If the chosen contentDiv yielded almost nothing, retry with the original messageEl
       // (the wrapper might be a metadata/header div that doesn't contain the response body).
-      if (md.trim().length < 20 && contentDiv !== messageEl) {
+      if (!md.includes('[[IMG:') && md.trim().length < 20 && contentDiv !== messageEl) {
         let mdRetry = '';
         for (const child of messageEl.childNodes) mdRetry += processNode(child);
         if (mdRetry.trim().length > md.trim().length) md = mdRetry;
@@ -297,7 +433,7 @@
       // If still tiny, walk UP from messageEl looking for an ancestor with substantial text.
       // Handles the case where Claude's wrapper element (e.g. font-claude-response) is itself
       // empty and the actual response sits in a sibling subtree we missed.
-      if (md.trim().length < 20) {
+      if (!md.includes('[[IMG:') && md.trim().length < 20) {
         let ancestor = messageEl.parentElement;
         for (let i = 0; i < 6 && ancestor && ancestor !== document.body; i++, ancestor = ancestor.parentElement) {
           if (ancestor.querySelector('[class*="font-user-message"]')) continue;
@@ -313,7 +449,7 @@
       }
 
       // Last-resort fallback: if we still have almost nothing, use raw text content.
-      if (md.trim().length < 20) {
+      if (!md.includes('[[IMG:') && md.trim().length < 20) {
         const text = (messageEl.textContent || messageEl.innerText || '').trim();
         if (text.length > md.trim().length) md = text;
       }
@@ -361,13 +497,17 @@
           continue;
         }
         const blockTag = node.tagName.toLowerCase();
+        if (['strong', 'b', 'em', 'i', 'code', 'a', 'sub', 'sup'].includes(blockTag)) {
+          md += processNode(node);
+          processedMathRoots.add(node);
+          continue;
+        }
         if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'br'].includes(blockTag)) {
           if (blockTag === 'br') md += '\n';
           else if (/^h[1-6]$/.test(blockTag)) md += '\n' + '#'.repeat(parseInt(blockTag[1])) + ' ';
           else if (blockTag === 'li') md += '\n- ';
           else md += '\n';
         }
-        if (blockTag === 'strong' || blockTag === 'b') md += '**';
       }
     }
     return md;
@@ -408,9 +548,9 @@
         .trim();
     }
 
-    // Sanitize: remove filename-unsafe chars, collapse spaces, cap at 50 chars
+    // Sanitize: remove filename-unsafe chars only; preserve spaces for readability
     if (title) {
-      title = title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_').slice(0, 50);
+      title = title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
     }
 
     return title || null;
@@ -450,14 +590,15 @@
       .trim();
   }
 
-  async function exportMarkdown(markdown, suffix, imageMap = {}) {
+  async function exportMarkdown(markdown, suffix, imageMap = {}, skipHeader = false) {
     suffix = suffix || '';
     // Replace image markers that couldn't be captured with text fallbacks
     markdown = markdown.replace(/\[\[IMG:(\d+)\]\]/g, (match, raw) => {
       const idx = parseInt(raw);
       if (imageMap[idx]) return match;
       const cap = _imgCaptures.find(c => c.idx === idx);
-      return cap?.alt ? `[Image: ${cap.alt}]` : '[Image]';
+      const srcFallback = _getImageSrc(cap?.el);
+      return srcFallback ? `(Image: ${srcFallback})` : cap?.alt ? `[Image: ${cap.alt}]` : '[Image]';
     });
 
     // Header: metadata line + MLA citation line (top of doc — survives appends).
@@ -470,15 +611,20 @@
     const vendor = isGemini ? 'Google' : isClaude ? 'Anthropic' : 'OpenAI';
     const mlaMonths = ['Jan.','Feb.','Mar.','Apr.','May','June','July','Aug.','Sept.','Oct.','Nov.','Dec.'];
     const mlaDate = `${now.getDate()} ${mlaMonths[now.getMonth()]} ${now.getFullYear()}`;
-    const citeTitle = (convTitle ? convTitle.replace(/_/g, ' ') : 'AI conversation');
-    const citation = `${vendor}. "${citeTitle}." ${platformName}, ${mlaDate}, ${sourceUrl}.`;
-    markdown = `*${metaParts.join(' · ')}*\n*Citation (MLA): ${citation}*\n\n` + markdown;
+    const citeTitle = convTitle || 'AI conversation';
+    const citation = `${vendor}. "${citeTitle}." ${platformName}, ${mlaDate}, ${sourceUrl}`;
+    if (!skipHeader) markdown = `*${metaParts.join(' · ')}*\n*Citation (MLA): ${citation}*\n\n` + markdown;
 
     const timestamp = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}`;
+    const monthYear = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
     const platform = platformName;
-    const filename = convTitle
-      ? `${convTitle}${suffix}.docx`
+    const safeTitle = convTitle ? convTitle.replace(/\s+/g, '_') : null;
+    const filename = safeTitle
+      ? `${safeTitle}${suffix}.docx`
       : `${platform}_Export${suffix}_${timestamp}.docx`;
+    const docTitle = convTitle
+      ? `${convTitle} — ${platformName} · ${monthYear}`
+      : `${platformName} Export · ${monthYear}`;
 
     if (!chrome.runtime || !chrome.runtime.sendMessage) {
       showToast('❌ Extension reloaded. Please refresh this page.', true);
@@ -543,7 +689,7 @@
       try {
         const result = await new Promise((resolve, reject) => {
           chrome.runtime.sendMessage(
-            { action: 'uploadToDrive', docxBase64: base64, filename, platform: platformName },
+            { action: 'uploadToDrive', docxBase64: base64, filename, docTitle, platform: platformName },
             (response) => {
               if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
               else if (response && response.success) resolve(response);
@@ -593,7 +739,7 @@
     }
   }
 
-  async function exportMessage(messageEl) {
+  async function exportMessage(messageEl, skipHeader = false) {
     showToast('⏳ Generating document...');
     _resetImgCaptures();
     const markdown = extractMarkdown(messageEl);
@@ -602,7 +748,7 @@
       return;
     }
     const imageMap = await _captureImages();
-    await exportMarkdown(markdown, '', imageMap);
+    await exportMarkdown(markdown, '', imageMap, skipHeader);
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -721,7 +867,7 @@
 
   function downloadCSV(tableEl, msgIndex, tableIndex) {
     const csv = tableToCSV(tableEl);
-    const base = getConversationTitle() || 'table';
+    const base = (getConversationTitle() || 'table').replace(/\s+/g, '_');
     const suffix = tableIndex > 0 ? `_table${tableIndex + 1}` : '_table';
     const filename = `${base}${suffix}.csv`;
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -739,8 +885,15 @@
 
   function getAllAIMessages() {
     if (isChatGPT) {
-      return Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'))
+      const standard = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'))
         .map(el => el.querySelector('.markdown') || el);
+      // Also include DALL-E / image turns that lack the assistant role attribute
+      for (const turn of document.querySelectorAll('[data-testid^="conversation-turn"]')) {
+        if (turn.querySelector('[data-message-author-role="assistant"]')) continue;
+        if (turn.querySelector('[data-message-author-role="user"]')) continue;
+        if (findChatGPTActionBar(turn)) standard.push(turn);
+      }
+      return standard.sort((a, b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
     }
     if (isGemini) {
       // Use only model-response (top-level) to avoid duplicates with child selectors
@@ -779,6 +932,17 @@
     return out;
   }
 
+  function getAllUserMessages() {
+    if (isChatGPT) return Array.from(document.querySelectorAll('[data-message-author-role="user"]'));
+    if (isClaude)  return Array.from(document.querySelectorAll('[class*="font-user-message"]'))
+                     .filter(el => !el.parentElement?.closest('[class*="font-user-message"]'));
+    if (isGemini)  {
+      const qs = Array.from(document.querySelectorAll('user-query'));
+      return qs.length ? qs : Array.from(document.querySelectorAll('message-content[data-content-type="user"]'));
+    }
+    return [];
+  }
+
   function getCleanPreview(msgEl) {
     const clone = msgEl.cloneNode(true);
     // Remove our injected buttons and any native UI buttons
@@ -786,6 +950,7 @@
     // Remove external image attribution links (e.g. "Opens in a new window · stockcake.com")
     clone.querySelectorAll('a[target="_blank"]').forEach(el => el.remove());
     const text = (clone.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '[Image]';
     const firstMeaningful = text.split(/\.|\n/).find(s => s.trim().length > 12) || text;
     return firstMeaningful.trim().slice(0, 85);
   }
@@ -818,31 +983,6 @@
     });
   }
 
-  function _showAppendDropdown(anchor, exp) {
-    document.querySelector('.cgd-append-drop')?.remove();
-    const drop = document.createElement('div');
-    drop.className = 'cgd-append-drop' + (isDarkMode() ? ' cgd-dark' : '');
-    const items = [
-      { text: '↩ Last response', fn: () => _appendToRecent(exp) },
-      { text: '≡ Full conversation', fn: () => _appendFullToDoc(exp) },
-      { text: '☑ Pick responses', fn: () => showSelectPanel(null, exp) }
-    ];
-    items.forEach(({ text, fn }) => {
-      const btn = document.createElement('button');
-      btn.className = 'cgd-append-drop-item';
-      btn.textContent = text;
-      btn.addEventListener('click', (e) => { e.stopPropagation(); drop.remove(); fn(); });
-      drop.appendChild(btn);
-    });
-    const rect = anchor.getBoundingClientRect();
-    drop.style.cssText = `position:fixed;bottom:${window.innerHeight - rect.top + 4}px;left:${rect.left}px;z-index:100001;`;
-    document.body.appendChild(drop);
-    setTimeout(() => {
-      const handler = (e) => { if (!drop.contains(e.target)) { drop.remove(); document.removeEventListener('click', handler); } };
-      document.addEventListener('click', handler);
-    }, 0);
-  }
-
   function showSelectPanel(thisMessageEl, appendTarget = null) {
     const existing = document.querySelector('.cgd-panel');
     if (existing) {
@@ -852,6 +992,8 @@
 
     const messages = getAllAIMessages();
     if (messages.length === 0) { showToast('❌ No AI responses found', true); return; }
+    _panelAnchorEl = messages[0];
+    _panelOpenedOnPath = location.pathname;
 
     chrome.storage.local.get(['lastExports', 'globalRecentDocs'], (storageData) => {
       _buildSelectPanel(messages, thisMessageEl, storageData, appendTarget);
@@ -922,7 +1064,7 @@
     destRow.appendChild(btnLocal);
     destRow.appendChild(btnMd);
 
-    // ── Path confirmation row (below export buttons — created here, appended after actionRow) ──
+    // ── Path confirmation row ──
     const pathRow = document.createElement('div');
     pathRow.className = 'cgd-path-row';
     const pathRowText = document.createElement('span');
@@ -977,6 +1119,10 @@
       recentRow.innerHTML = '';
       recentRow.style.display = (exportDest === 'drive' && recents.length > 0) ? 'flex' : 'none';
       if (exportDest !== 'drive' || recents.length === 0) return;
+      const recentLabel = document.createElement('div');
+      recentLabel.className = 'cgd-recent-label';
+      recentLabel.textContent = 'Append to recent:';
+      recentRow.appendChild(recentLabel);
       recents.forEach(exp => {
         const chip = document.createElement('div');
         chip.className = 'cgd-recent-chip';
@@ -998,7 +1144,7 @@
 
         const icon = document.createElement('span');
         icon.className = 'cgd-rc-icon';
-        icon.textContent = '↩';
+        icon.textContent = '📄';
 
         const nameEl = document.createElement('span');
         nameEl.className = 'cgd-rc-name';
@@ -1013,13 +1159,6 @@
         const actions = document.createElement('span');
         actions.className = 'cgd-rc-actions';
 
-        const appendBtn = document.createElement('button');
-        appendBtn.className = 'cgd-rc-btn';
-        appendBtn.textContent = '+↩';
-        const isSameConv = convHistory.some(e => e.fileId === exp.fileId);
-        appendBtn.title = isSameConv ? 'Continue this document' : 'Append last response to this doc';
-        appendBtn.addEventListener('click', (e) => { e.stopPropagation(); _showAppendDropdown(appendBtn, exp); });
-
         const openBtn = document.createElement('a');
         openBtn.className = 'cgd-rc-btn';
         openBtn.href = exp.url || `https://docs.google.com/document/d/${exp.fileId}/edit`;
@@ -1028,7 +1167,6 @@
         openBtn.title = 'Open in Drive';
         openBtn.addEventListener('click', e => e.stopPropagation());
 
-        actions.appendChild(appendBtn);
         actions.appendChild(openBtn);
         chip.appendChild(icon);
         chip.appendChild(nameEl);
@@ -1064,33 +1202,10 @@
     btnLocal.addEventListener('click', () => setDest('local'));
     btnMd.addEventListener('click',    () => setDest('markdown'));
 
-    // ── Action row: Last / Full / Pick ──
-    const actionRow = document.createElement('div');
-    actionRow.className = 'cgd-action-row';
-
-    const btnLast = document.createElement('button');
-    btnLast.className = 'cgd-action-btn';
-    btnLast.textContent = '↩ Last';
-    btnLast.title = 'Export last AI response';
-
-    const btnFull = document.createElement('button');
-    btnFull.className = 'cgd-action-btn';
-    btnFull.textContent = '≡ Full';
-    btnFull.title = 'Export full conversation';
-
-    const btnPick = document.createElement('button');
-    btnPick.className = 'cgd-action-btn';
-    btnPick.textContent = '☑ Pick';
-    btnPick.title = 'Select specific responses';
-
-    actionRow.appendChild(btnLast);
-    actionRow.appendChild(btnFull);
-    actionRow.appendChild(btnPick);
-
-    // ── Pick area (collapsed by default) ──
+    // ── Pick area ──
     const pickArea = document.createElement('div');
     pickArea.className = 'cgd-pick-area';
-    pickArea.style.display = 'none';
+    pickArea.style.display = 'flex';
 
     // ── Select all / none ──
     const controls = document.createElement('div');
@@ -1102,6 +1217,8 @@
     list.className = 'cgd-panel-list';
     const checkboxes = [];
     const rowEls = [];
+
+    const userMsgs = getAllUserMessages();
 
     messages.forEach((msgEl, i) => {
       const preview = getCleanPreview(msgEl);
@@ -1116,7 +1233,7 @@
 
       const cb = document.createElement('input');
       cb.type = 'checkbox';
-      cb.checked = true;
+      cb.checked = (i === thisIdx);
       checkboxes.push(cb);
       cb.addEventListener('change', updateCount);
 
@@ -1129,7 +1246,8 @@
       numDiv.className = 'cgd-msg-num';
 
       const numText = document.createElement('span');
-      numText.textContent = `Response ${i + 1}`;
+      const _uqText = ((userMsgs[i]?.textContent || '').replace(/\s+/g, ' ').trim()).slice(0, 60);
+      numText.textContent = _uqText ? `"${_uqText}…"` : `Response ${i + 1}`;
 
       // Small jump button — separate from label so it doesn't block checkbox toggle
       const jumpBtn = document.createElement('button');
@@ -1182,7 +1300,7 @@
 
     const countLabel = document.createElement('span');
     countLabel.className = 'cgd-count-label';
-    countLabel.textContent = messages.length + ' selected';
+    countLabel.textContent = '0 selected';
 
     const exportBtn = document.createElement('button');
     exportBtn.className = 'cgd-export-sel-btn';
@@ -1196,6 +1314,19 @@
     footerMain.appendChild(countLabel);
     footerMain.appendChild(exportBtn);
     footer.appendChild(footerMain);
+    updateCount();
+    const feedbackNote = document.createElement('div');
+    feedbackNote.className = 'cgd-feedback-note';
+    feedbackNote.style.cssText = 'padding:5px 14px 8px;font-size:10px;text-align:center;color:#999;line-height:1.4;display:block;flex-shrink:0;border-top:1px solid rgba(0,0,0,0.06);';
+    const feedbackA = document.createElement('a');
+    feedbackA.className = 'cgd-feedback-link';
+    feedbackA.href = 'https://forms.gle/XGW5JQ2kRjTgz2bB8';
+    feedbackA.target = '_blank';
+    feedbackA.textContent = 'share feedback';
+    feedbackA.style.cssText = 'color:#999;text-decoration:underline;cursor:pointer;';
+    feedbackNote.appendChild(document.createTextNode('I read every response — '));
+    feedbackNote.appendChild(feedbackA);
+    feedbackNote.appendChild(document.createTextNode(' →'));
 
     pickArea.appendChild(controls);
     pickArea.appendChild(list);
@@ -1206,13 +1337,10 @@
     if (!appendTarget) {
       panel.appendChild(destRow);
       panel.appendChild(recentRow);
-      panel.appendChild(actionRow);
       panel.appendChild(pathRow);
     }
     panel.appendChild(pickArea);
-    if (appendTarget) {
-      pickArea.style.display = 'flex'; // auto-expand pick area in append mode
-    }
+    panel.appendChild(feedbackNote);
 
     // ── Shared logic ──
     function close() {
@@ -1284,46 +1412,16 @@
 
     header.querySelector('.cgd-panel-close').addEventListener('click', close);
 
-    btnLast.addEventListener('click', () => {
-      if (selectedChip) {
-        _appendToRecent(selectedChip);
-        close();
-      } else {
-        close();
-        const el = getLastAIMessage();
-        if (el) exportMessage(el); else showToast('❌ No AI response found', true);
-      }
-    });
-
-    btnFull.addEventListener('click', () => {
-      if (selectedChip) {
-        _appendFullToDoc(selectedChip);
-        close();
-      } else {
-        close();
-        exportFullConversation();
-      }
-    });
-
-    btnPick.addEventListener('click', () => {
-      const open = pickArea.style.display !== 'none';
-      pickArea.style.display = open ? 'none' : 'flex';
-      btnPick.classList.toggle('cgd-action-btn-active', !open);
-      if (!open) {
-        setTimeout(() => {
-          if (thisIdx !== -1 && rowEls[thisIdx]) rowEls[thisIdx].scrollIntoView({ block: 'nearest' });
-          else list.scrollTop = list.scrollHeight;
-        }, 30);
-      }
-    });
-
     controls.querySelector('#cgd-sa').addEventListener('click', () => { checkboxes.forEach(cb => cb.checked = true); updateCount(); });
     controls.querySelector('#cgd-sn').addEventListener('click', () => { checkboxes.forEach(cb => cb.checked = false); updateCount(); });
 
     exportBtn.addEventListener('click', exportSelected);
 
     document.body.appendChild(panel);
-    setTimeout(() => document.addEventListener('click', outsideClickHandler), 0);
+    setTimeout(() => {
+      if (thisIdx !== -1 && rowEls[thisIdx]) rowEls[thisIdx].scrollIntoView({ block: 'nearest' });
+      document.addEventListener('click', outsideClickHandler);
+    }, 0);
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1342,13 +1440,42 @@
       btn.addEventListener('click', (e) => handleExportClick(e, msg.querySelector('.markdown') || msg));
       insertBeforeMoreButton(actionArea, btn);
     }
+
+    // Second pass: DALL-E / image-gen turns (no data-message-author-role="assistant" child)
+    const imageButtons = document.querySelectorAll('[data-testid="good-image-turn-action-button"]');
+    for (const goodBtn of imageButtons) {
+      const container = goodBtn.closest('[data-testid^="conversation-turn"]');
+      if (!container || container.querySelector('.' + BUTTON_CLASS)) continue;
+      const actionArea = findChatGPTActionBar(container);
+      if (!actionArea) continue;
+      const btn = createExportButton();
+      btn.addEventListener('click', (e) => handleExportClick(e, container));
+      insertBeforeMoreButton(actionArea, btn);
+    }
+
+    // Third pass: catch-all for any turn with an action bar but no export button yet
+    const allChatTurns = document.querySelectorAll('[data-testid^="conversation-turn"]');
+    for (const turn of allChatTurns) {
+      if (turn.querySelector('.' + BUTTON_CLASS)) continue;
+      const hasUser = !!turn.querySelector('[data-message-author-role="user"]');
+      const hasAssistant = !!turn.querySelector('[data-message-author-role="assistant"]');
+      if (hasUser && !hasAssistant) continue;
+      const actionArea = findChatGPTActionBar(turn);
+      if (!actionArea) continue;
+      const msgEl = turn.querySelector('[data-message-author-role="assistant"]');
+      const contentEl = msgEl ? (msgEl.querySelector('.markdown') || msgEl) : turn;
+      const btn = createExportButton();
+      btn.addEventListener('click', (e) => handleExportClick(e, contentEl));
+      insertBeforeMoreButton(actionArea, btn);
+    }
   }
 
   function findChatGPTActionBar(container) {
-    // Always prefer the thumbs bar — it's the canonical bottom action bar on both text
-    // and image responses. Checking copy-turn-action-button first was wrong because
-    // ChatGPT image cards also expose a copy button in the top-right overlay, causing
-    // the export button to land there instead of the bottom bar.
+    // Primary: semantic action bar div — locale-independent, present on text AND image responses
+    const actionGroup = container.querySelector('div[role="group"][aria-label]');
+    if (actionGroup && actionGroup.querySelectorAll('button').length >= 1) return actionGroup;
+
+    // Fallback: thumbs bar (works when role="group" is absent)
     const thumbBtn = container.querySelector(
       'button[data-testid="thumbs-up-button"], button[data-testid="thumbs-down-button"], ' +
       'button[aria-label="Good response"], button[aria-label="Bad response"], ' +
@@ -1371,6 +1498,20 @@
         bar = bar.parentElement;
       }
       return copyBtn.parentElement;
+    }
+    // DALL-E / image-generation card: download or regenerate button lives in the bottom bar
+    const dalleBtn = container.querySelector(
+      'button[aria-label="Download image"], button[aria-label="Regenerate"], ' +
+      'button[data-testid*="download"], button[data-testid*="regenerate"], ' +
+      'button[aria-label*="download" i], button[aria-label*="regenerate" i]'
+    );
+    if (dalleBtn) {
+      let bar = dalleBtn.parentElement;
+      for (let i = 0; i < 4 && bar; i++) {
+        if (bar.querySelectorAll('button').length >= 2) return bar;
+        bar = bar.parentElement;
+      }
+      return dalleBtn.parentElement;
     }
     const allDivs = container.querySelectorAll('div.flex');
     for (const div of allDivs) {
@@ -1612,9 +1753,194 @@
     if (isChatGPT) addChatGPTButtons();
     if (isGemini) addGeminiButtons();
     if (isClaude) addClaudeButtons();
+
+    // Gemini / URL-invariant: close panel when anchor leaves DOM
+    const panel = document.querySelector('.cgd-panel');
+    if (panel && _panelAnchorEl && !document.body.contains(_panelAnchorEl)) {
+      panel.remove();
+      _shouldReopenPanel = true;
+      // 保留 _panelAnchorEl（已 detach，!contains() 持续为 true）
+    }
+    // Reopen: anchor gone from DOM = old content cleared; new messages ready
+    if (!document.querySelector('.cgd-panel') && _shouldReopenPanel &&
+        getAllAIMessages().length > 0 &&
+        ((_panelOpenedOnPath && location.pathname !== _panelOpenedOnPath) ||
+         !_panelAnchorEl || !document.body.contains(_panelAnchorEl))) {
+      _shouldReopenPanel = false;
+      showSelectPanel(null, null);
+    }
   }
 
-  function init() { addButtons(); }
+  function _onNavigation() {
+    if (location.pathname !== _lastNavPath) {
+      _lastNavPath = location.pathname;
+      const panel = document.querySelector('.cgd-panel');
+      if (panel) {
+        panel.remove();
+        _shouldReopenPanel = true;
+        // 保留 _panelAnchorEl — 用于确认旧内容已从 DOM 清除后再重开
+      }
+    }
+  }
+  const _origPushState = history.pushState.bind(history);
+  history.pushState = function(...args) {
+    _origPushState(...args);
+    setTimeout(_onNavigation, 100);
+  };
+  const _origReplaceState = history.replaceState.bind(history);
+  history.replaceState = function(...args) {
+    _origReplaceState(...args);
+    setTimeout(_onNavigation, 100);
+  };
+  window.addEventListener('popstate', () => setTimeout(_onNavigation, 100));
+
+  function setupSelectionButton() {
+    let selBtn = null;
+
+    function createSelBtn() {
+      const btn = document.createElement('div');
+      btn.className = 'cgd-sel-float' + (isDarkMode() ? ' cgd-dark' : '');
+      btn.style.cssText = 'position:fixed;z-index:100002;display:none;';
+      document.body.appendChild(btn);
+      return btn;
+    }
+
+    function hideBtn() {
+      if (selBtn) selBtn.style.display = 'none';
+    }
+
+    document.addEventListener('mouseup', () => {
+      setTimeout(() => {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || !sel.toString().trim()) { hideBtn(); return; }
+        if (!selBtn) selBtn = createSelBtn();
+
+        chrome.storage.local.get(['globalRecentDocs', 'lastExports'], (data) => {
+          const convKey = location.hostname + location.pathname;
+          const convHistory = Array.isArray((data.lastExports || {})[convKey])
+            ? (data.lastExports || {})[convKey] : [];
+          const globalDocs = Array.isArray(data.globalRecentDocs) ? data.globalRecentDocs : [];
+          const seen = new Set();
+          const recents = [...convHistory, ...globalDocs].filter(e => {
+            if (seen.has(e.fileId)) return false;
+            seen.add(e.fileId); return true;
+          }).slice(0, 2);
+
+          const topDoc = recents[0] || null;
+          const mainLabel = topDoc
+            ? `→ Append to “${(topDoc.fileName || '').slice(0, 20)}”`
+            : 'Export to Docs';
+
+          selBtn.innerHTML = '';
+          selBtn.className = 'cgd-sel-float' + (isDarkMode() ? ' cgd-dark' : '');
+          const mainPart = document.createElement('span');
+          mainPart.className = 'cgd-sel-main';
+          mainPart.textContent = mainLabel;
+          selBtn.appendChild(mainPart);
+
+          if (recents.length > 0) {
+            const arrow = document.createElement('span');
+            arrow.className = 'cgd-sel-arrow';
+            arrow.textContent = '▾';
+            selBtn.appendChild(arrow);
+          }
+
+          const range = sel.getRangeAt(0);
+          const rect = range.getBoundingClientRect();
+          selBtn.style.left = `${Math.max(8, rect.left)}px`;
+          selBtn.style.top = `${rect.top - 40}px`;
+          selBtn.style.display = 'flex';
+
+          mainPart.onclick = (e) => {
+            e.stopPropagation();
+            const curSel = window.getSelection();
+            const wrapper = document.createElement('div');
+            if (curSel && !curSel.isCollapsed) wrapper.appendChild(curSel.getRangeAt(0).cloneContents());
+            hideBtn();
+            if (topDoc) {
+              showToast('⏳ Appending…');
+              const text = extractMarkdown(wrapper);
+              chrome.runtime.sendMessage({ action: 'appendToDoc', fileId: topDoc.fileId, text }, (resp) => {
+                if (resp?.success) {
+                  const _u = topDoc.url || `https://docs.google.com/document/d/${topDoc.fileId}/edit`;
+                  showToast(`✅ Appended to "<b>${escHtml(topDoc.fileName)}</b>" · <a href="${_u}" target="_blank" style="color:#fff;text-decoration:underline">Open ↗</a>`, false, 6000);
+                } else showToast('❌ Append failed: ' + (resp?.error || ''), true);
+              });
+            } else {
+              exportMessage(wrapper, true);
+            }
+          };
+
+          if (recents.length > 0) {
+            selBtn.querySelector('.cgd-sel-arrow').onclick = (e) => {
+              e.stopPropagation();
+              _showSelDropdown(selBtn, recents, sel);
+            };
+          }
+        });
+      }, 10);
+    });
+
+    document.addEventListener('mousedown', (e) => {
+      if (!selBtn || !selBtn.contains(e.target)) hideBtn();
+    });
+  }
+
+  function _showSelDropdown(anchor, recents, sel) {
+    document.querySelector('.cgd-sel-drop')?.remove();
+    const drop = document.createElement('div');
+    drop.className = 'cgd-sel-drop' + (isDarkMode() ? ' cgd-dark' : '');
+    const wrapper = document.createElement('div');
+    if (sel && !sel.isCollapsed) wrapper.appendChild(sel.getRangeAt(0).cloneContents());
+
+    recents.forEach(doc => {
+      const btn = document.createElement('button');
+      btn.className = 'cgd-sel-drop-item';
+      btn.textContent = `📄 ${(doc.fileName || '').slice(0, 28)}`;
+      btn.addEventListener('click', () => {
+        drop.remove();
+        anchor.style.display = 'none';
+        showToast('⏳ Appending…');
+        const text = extractMarkdown(wrapper);
+        chrome.runtime.sendMessage({ action: 'appendToDoc', fileId: doc.fileId, text }, (resp) => {
+          if (resp?.success) {
+            const _u = doc.url || `https://docs.google.com/document/d/${doc.fileId}/edit`;
+            showToast(`✅ Appended to "<b>${escHtml(doc.fileName)}</b>" · <a href="${_u}" target="_blank" style="color:#fff;text-decoration:underline">Open ↗</a>`, false, 6000);
+          } else showToast('❌ Append failed: ' + (resp?.error || ''), true);
+        });
+      });
+      drop.appendChild(btn);
+    });
+
+    const divider = document.createElement('div');
+    divider.className = 'cgd-sel-drop-divider';
+    drop.appendChild(divider);
+
+    const newBtn = document.createElement('button');
+    newBtn.className = 'cgd-sel-drop-item';
+    newBtn.textContent = 'Export to new Doc';
+    newBtn.addEventListener('click', () => {
+      drop.remove();
+      anchor.style.display = 'none';
+      exportMessage(wrapper, true);
+    });
+    drop.appendChild(newBtn);
+
+    const rect = anchor.getBoundingClientRect();
+    drop.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.bottom + 4}px;z-index:100003;`;
+    document.body.appendChild(drop);
+    setTimeout(() => {
+      const h = (ev) => {
+        if (!drop.contains(ev.target) && !anchor.contains(ev.target)) {
+          drop.remove();
+          document.removeEventListener('click', h);
+        }
+      };
+      document.addEventListener('click', h);
+    }, 0);
+  }
+
+  function init() { addButtons(); setupSelectionButton(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
@@ -1669,6 +1995,16 @@
           showSelectPanel(null);
         }
       });
+      return;
+    }
+    if (request.action === 'exportSelection') {
+      sendResponse({ ok: true });
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) { showToast('❌ No text selected', true); return; }
+      const range = sel.getRangeAt(0);
+      const wrapper = document.createElement('div');
+      wrapper.appendChild(range.cloneContents());
+      exportMessage(wrapper, true);
       return;
     }
   });

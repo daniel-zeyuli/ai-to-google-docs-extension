@@ -120,9 +120,6 @@
 }
 .cgd-panel-close:hover { background: var(--p-btn-bg); color: var(--p-text); }
 
-/* ── Drive button wider when showing folder name ────────────── */
-.cgd-dest-btn-drive { flex: 2; max-width: 195px; text-align: left; }
-
 /* ── Destination toggle row ─────────────────────────────────── */
 .cgd-dest-row {
   display: flex;
@@ -141,6 +138,9 @@
 
 .cgd-dest-btn {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 5px 10px;
   background: var(--p-btn-bg);
   border: 1.5px solid transparent;
@@ -150,9 +150,7 @@
   color: var(--p-sub);
   cursor: pointer;
   transition: all 0.13s;
-  overflow: hidden;
   white-space: nowrap;
-  text-overflow: ellipsis;
 }
 .cgd-dest-btn:hover { background: var(--p-btn-hover); }
 .cgd-dest-btn.cgd-dest-active {
@@ -358,6 +356,9 @@
 
 /* ── In-page button: path + label spans ─────────────────────── */
 .cgd-btn-path {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 11px;
   color: #6b7280;
   flex-shrink: 0;
@@ -380,14 +381,31 @@
   flex-shrink: 0;
   border-bottom: 1px solid var(--p-divider);
 }
+.cgd-recent-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--p-muted);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  padding: 5px 6px 2px;
+}
 .cgd-recent-chip {
   display: flex; align-items: center; gap: 5px;
   padding: 4px 6px; border-radius: 6px;
   font-size: 11px; color: var(--p-sub);
-  cursor: default; transition: background 0.12s;
+  cursor: pointer; transition: background 0.12s, border-color 0.12s;
   white-space: nowrap; overflow: hidden;
+  border: 1.5px solid transparent;
 }
 .cgd-recent-chip:hover { background: var(--p-row-hover); }
+.cgd-chip-selected {
+  background: var(--p-accent-bg) !important;
+  border-color: var(--p-accent-bd) !important;
+  color: var(--p-accent) !important;
+}
+.cgd-chip-selected .cgd-rc-icon,
+.cgd-chip-selected .cgd-rc-ts { color: var(--p-accent) !important; opacity: 0.7; }
+.cgd-chip-selected .cgd-rc-actions { opacity: 1; }
 .cgd-rc-icon  { font-size: 10px; color: var(--p-muted); flex-shrink: 0; }
 .cgd-rc-name  { flex: 1; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .cgd-rc-ts    { font-size: 10px; color: var(--p-muted); flex-shrink: 0; margin-right: 1px; }
@@ -465,3 +483,41 @@
 }
 .cgd-append-drop.cgd-dark .cgd-append-drop-item { color: #e8eaed; }
 .cgd-append-drop.cgd-dark .cgd-append-drop-item:hover { background: rgba(138,180,248,0.15); color: #8ab4f8; }
+
+/* ── Panel feedback note ── */
+.cgd-feedback-note { margin: 6px 0 0; font-size: 10px; text-align: center; color: #aaa; line-height: 1.4; }
+.cgd-feedback-link { color: #aaa; text-decoration: underline; }
+.cgd-feedback-link:hover { color: #2563eb; }
+.cgd-panel.cgd-dark .cgd-feedback-note { color: #666; }
+.cgd-panel.cgd-dark .cgd-feedback-link { color: #666; }
+
+/* ── Text-selection floating button ── */
+.cgd-sel-float {
+  display: flex; align-items: center; gap: 0;
+  background: #1a73e8; color: #fff;
+  border-radius: 6px; font-size: 12px; font-weight: 500;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  cursor: pointer; user-select: none;
+  overflow: hidden;
+}
+.cgd-sel-main { padding: 6px 10px; }
+.cgd-sel-main:hover { background: rgba(255,255,255,0.15); }
+.cgd-sel-arrow { padding: 6px 8px 6px 4px; border-left: 1px solid rgba(255,255,255,0.25); }
+.cgd-sel-arrow:hover { background: rgba(255,255,255,0.15); }
+.cgd-sel-drop {
+  background: #fff; border: 1px solid #e0e0e0;
+  border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  min-width: 180px; overflow: hidden;
+}
+.cgd-sel-drop.cgd-dark { background: #1e2021; border-color: rgba(255,255,255,0.12); }
+.cgd-sel-drop-item {
+  display: block; width: 100%; text-align: left;
+  padding: 8px 12px; font-size: 12px;
+  background: none; border: none; cursor: pointer; color: #111;
+}
+.cgd-sel-drop.cgd-dark .cgd-sel-drop-item { color: #e8eaed; }
+.cgd-sel-drop-item:hover { background: #f1f3f4; }
+.cgd-sel-drop.cgd-dark .cgd-sel-drop-item:hover { background: rgba(138,180,248,0.15); }
+.cgd-sel-drop-divider { border-top: 1px solid #f0f0f0; margin: 3px 0; }
+.cgd-sel-drop.cgd-dark .cgd-sel-drop-divider { border-color: rgba(255,255,255,0.08); }
+.cgd-panel.cgd-dark .cgd-feedback-link:hover { color: #60a5fa; }

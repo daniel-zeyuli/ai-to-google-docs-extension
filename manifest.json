@@ -1,19 +1,24 @@
 {
   "manifest_version": 3,
   "name": "__MSG_appName__",
-  "version": "4.0.0",
+  "version": "4.2.0",
   "description": "__MSG_appDescription__",
   "default_locale": "en",
   "permissions": [
     "identity",
     "storage",
-    "downloads"
+    "downloads",
+    "contextMenus"
   ],
   "host_permissions": [
     "https://www.googleapis.com/*",
     "https://docs.googleapis.com/*",
     "https://oaiusercontent.com/*",
-    "https://*.googleusercontent.com/*"
+    "https://*.googleusercontent.com/*",
+    "https://*.anthropic.com/*",
+    "https://claude.ai/*",
+    "https://*.gstatic.com/*",
+    "https://*/*"
   ],
   "oauth2": {
     "client_id": "39131322719-3fr4tc7gi8jc3b3mavi6npvatai37b90.apps.googleusercontent.com",
@@ -32,7 +37,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "ChatGPT to Google Docs - Export Gemini & Claude"
+    "default_title": "ChatGPT to Google Docs: Export Gemini, Claude (Math, Code)"
   },
   "content_scripts": [
     {

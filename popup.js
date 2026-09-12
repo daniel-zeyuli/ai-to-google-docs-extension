@@ -1,9 +1,14 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const optDrive       = document.getElementById('opt-drive');
-  const optLocal       = document.getElementById('opt-local');
-  const driveDetail    = document.getElementById('drive-detail');
-  const changeFolderBtn = document.getElementById('change-folder');
-  const modeHint       = document.getElementById('mode-hint');
+  // Apply localized strings to every [data-i18n] element
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const msg = chrome.i18n.getMessage(el.dataset.i18n);
+    if (msg) el.textContent = msg;
+  });
+
+  const optDrive = document.getElementById('opt-drive');
+  const optLocal = document.getElementById('opt-local');
+  const optMd    = document.getElementById('opt-md');
+  const modeHint = document.getElementById('mode-hint');
   const shortcutDisplay = document.getElementById('shortcut-display');
   const shortcutCustomize = document.getElementById('shortcut-customize');
 
@@ -11,30 +16,27 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentMode = 'last';
 
   const MODE_HINTS = {
-    last:   'Exports the last AI response',
-    full:   'Exports the full conversation',
-    select: 'Opens panel to pick responses'
+    last:   chrome.i18n.getMessage('hintLast') || 'Exports the last AI response',
+    full:   chrome.i18n.getMessage('hintFull') || 'Exports the full conversation',
+    select: chrome.i18n.getMessage('hintPick') || 'Opens panel to pick responses'
   };
 
-  // ── Load saved settings ──
-  chrome.storage.local.get(['exportDest', 'defaultExportMode', 'customFolderName'], (d) => {
+  chrome.storage.local.get(['exportDest', 'defaultExportMode'], (d) => {
     currentDest = d.exportDest || 'drive';
     currentMode = d.defaultExportMode || 'last';
     applyDest();
     applyMode();
-    if (d.customFolderName) driveDetail.textContent = d.customFolderName;
   });
 
-  // ── Read real keyboard shortcut ──
   chrome.commands.getAll((commands) => {
     const cmd = commands.find(c => c.name === 'trigger-export');
-    if (cmd && cmd.shortcut) shortcutDisplay.textContent = cmd.shortcut;
-    else shortcutDisplay.textContent = 'Not set';
+    shortcutDisplay.textContent = cmd?.shortcut || chrome.i18n.getMessage('notSet') || 'Not set';
   });
 
   function applyDest() {
     optDrive.classList.toggle('active', currentDest === 'drive');
     optLocal.classList.toggle('active', currentDest === 'local');
+    optMd.classList.toggle('active',    currentDest === 'markdown');
   }
 
   function applyMode() {
@@ -44,35 +46,14 @@ document.addEventListener('DOMContentLoaded', () => {
     modeHint.textContent = MODE_HINTS[currentMode] || '';
   }
 
-  // ── Destination selection ──
-  [optDrive, optLocal].forEach(opt => {
-    opt.addEventListener('click', (e) => {
-      if (changeFolderBtn.contains(e.target)) return;
+  [optDrive, optLocal, optMd].forEach(opt => {
+    opt.addEventListener('click', () => {
       currentDest = opt.dataset.dest;
       chrome.storage.local.set({ exportDest: currentDest });
       applyDest();
     });
   });
 
-  // ── Change folder (›) ──
-  changeFolderBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    currentDest = 'drive';
-    chrome.storage.local.set({ exportDest: 'drive' });
-    applyDest();
-    // Pre-auth here (popup has user-gesture context) so picker can use cached token
-    chrome.identity.getAuthToken({ interactive: true }, (token) => {
-      if (!chrome.runtime.lastError && token) {
-        const W = 900, H = 620;
-        const left = Math.max(window.screenX, window.screenX + Math.floor((window.outerWidth  - W) / 2));
-        const top  = Math.max(window.screenY, window.screenY + Math.floor((window.outerHeight - H) / 2));
-        chrome.windows.create({ url: chrome.runtime.getURL('picker-host.html'), type: 'popup', width: W, height: H, left, top });
-      }
-      window.close();
-    });
-  });
-
-  // ── Mode tabs ──
   document.querySelectorAll('.mode-tab').forEach(b => {
     b.addEventListener('click', () => {
       currentMode = b.dataset.mode;
@@ -81,9 +62,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // ── Keyboard shortcut customize ──
   shortcutCustomize.addEventListener('click', () => {
     chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+    window.close();
+  });
+
+  document.getElementById('feedbackBtn').addEventListener('click', () => {
+    chrome.tabs.create({ url: 'https://forms.gle/XGW5JQ2kRjTgz2bB8' });
+    window.close();
+  });
+
+  document.getElementById('proBtn').addEventListener('click', () => {
+    chrome.tabs.create({ url: 'https://docs.google.com/forms/d/e/1FAIpQLScAP7Ok8jRTbHV8sekEnDwZAaktJ0bme3bT8vsNKI6LSrR1jA/viewform?usp=dialog' });
     window.close();
   });
 });
