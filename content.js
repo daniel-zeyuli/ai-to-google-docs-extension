@@ -372,7 +372,10 @@
     try {
       let contentDiv;
       if (isChatGPT) {
-        contentDiv = messageEl.querySelector('.markdown') || messageEl;
+        contentDiv = messageEl.querySelector('.markdown') ||
+                     messageEl.querySelector('[class*="markdown"]') ||
+                     messageEl.querySelector('article') ||
+                     messageEl;
       } else if (isGemini) {
         contentDiv = messageEl.querySelector('.markdown-main-panel') ||
                      messageEl.querySelector('.model-response-text') ||
@@ -845,7 +848,7 @@
     if (isChatGPT) {
       const msgs = document.querySelectorAll('[data-message-author-role="assistant"]');
       const last = msgs[msgs.length - 1];
-      return last ? (last.querySelector('.markdown') || last) : null;
+      return last ? (last.querySelector('.markdown') || last.querySelector('[class*="markdown"]') || last.querySelector('article') || last) : null;
     }
     if (isGemini) {
       const msgs = getAllAIMessages();
@@ -875,7 +878,7 @@
       const allMsgs = document.querySelectorAll('[data-message-author-role]');
       for (const msg of allMsgs) {
         const role = msg.getAttribute('data-message-author-role');
-        const contentEl = role === 'assistant' ? (msg.querySelector('.markdown') || msg) : msg;
+        const contentEl = role === 'assistant' ? (msg.querySelector('.markdown') || msg.querySelector('[class*="markdown"]') || msg.querySelector('article') || msg) : msg;
         const text = extractMarkdown(contentEl).trim();
         if (text) turns.push({ role: role === 'user' ? 'You' : 'ChatGPT', text });
       }
@@ -1000,7 +1003,7 @@
   function getAllAIMessages() {
     if (isChatGPT) {
       const standard = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'))
-        .map(el => el.querySelector('.markdown') || el);
+        .map(el => el.querySelector('.markdown') || el.querySelector('[class*="markdown"]') || el.querySelector('article') || el);
       // Also include DALL-E / image turns that lack the assistant role attribute
       for (const turn of document.querySelectorAll('[data-testid^="conversation-turn"]')) {
         if (turn.querySelector('[data-message-author-role="assistant"]')) continue;
@@ -1609,7 +1612,7 @@
       if (!actionArea) continue;
 
       const btn = createExportButton();
-      btn.addEventListener('click', (e) => handleExportClick(e, msg.querySelector('.markdown') || msg));
+      btn.addEventListener('click', (e) => handleExportClick(e, msg.querySelector('.markdown') || msg.querySelector('[class*="markdown"]') || msg.querySelector('article') || msg));
       insertBeforeMoreButton(actionArea, btn);
     }
 
@@ -1635,7 +1638,7 @@
       const actionArea = findChatGPTActionBar(turn);
       if (!actionArea) continue;
       const msgEl = turn.querySelector('[data-message-author-role="assistant"]');
-      const contentEl = msgEl ? (msgEl.querySelector('.markdown') || msgEl) : turn;
+      const contentEl = msgEl ? (msgEl.querySelector('.markdown') || msgEl.querySelector('[class*="markdown"]') || msgEl.querySelector('article') || msgEl) : turn;
       const btn = createExportButton();
       btn.addEventListener('click', (e) => handleExportClick(e, contentEl));
       insertBeforeMoreButton(actionArea, btn);

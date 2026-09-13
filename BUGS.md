@@ -270,6 +270,26 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 
 ---
 
+### BUG-021: ChatGPT export produces only metadata header (no body content)
+**Date:** 2026-09-13
+**Symptom:** Exporting a ChatGPT response (especially math-heavy ones) produced a Google Doc with only the italic metadata/citation header — the actual AI response text was missing.
+**Root cause:** ChatGPT changed the markdown container class from a single `markdown` class to a compound Tailwind-style class (`markdown prose w-full break-words flex-col gap-y-1`). `querySelector('.markdown')` was an exact class-name match and returned `null`. The fallback `|| messageEl` used the raw `[data-message-author-role="assistant"]` container, which caused `processNode` to iterate the full message DOM including structure-only wrappers. This produced valid-looking extraction for plain text but failed silently for math content where the KaTeX elements were nested several levels deeper than the direct children of the message element.
+**Fix:** Changed all 6 ChatGPT `.markdown` selectors in `content.js` to a three-step fallback chain: `.markdown` → `[class*="markdown"]` → `article` → messageEl. The `[class*="markdown"]` substring match catches the compound class name regardless of what other Tailwind classes are appended (commit following BUG-021).
+**Lesson:** Never use exact `.className` selectors for platform DOM elements that use utility-class frameworks (Tailwind). ChatGPT, Perplexity, and others compose classes dynamically. Always use `[class*="keyword"]` as the first fallback. This pattern already existed for Claude (`.standard-markdown` → `[class*="markdown"]`) but was missed for the ChatGPT branch.
+**Related files:** `content.js` (`extractMarkdown`, `getLastAIMessage`, `exportFullConversation`, `getAllAIMessages`, `addChatGPTButtons`). **BUG-018 has a similar lesson for Claude.**
+
+---
+
+### BUG-022: ChatGPT "Ask ChatGPT / Start writing" bar visually overlaps export button
+**Date:** 2026-09-13
+**Symptom:** ChatGPT's new contextual "Ask ChatGPT" / "开始写作" (Start writing) composition bar appears near AI responses and partially obscures the injected export button. The extension bar is partially visible but not fully accessible.
+**Root cause:** Unknown — requires live DOM inspection on a ChatGPT page showing the bar. Hypothesis: ChatGPT injected a new floating or inline bar into the `role="group"` action container (or near it), which pushes our button out of the visible area, or overlaps it with a higher z-index element. This may also be related to ChatGPT's "Canvas" composition feature.
+**Fix:** NOT YET FIXED — needs live DOM investigation. Steps: open ChatGPT, trigger the "Ask ChatGPT" bar, inspect the element hierarchy to find which container it belongs to and whether it collides with `div[role="group"][aria-label]`. Once identified, either: (a) filter out the new bar's container in `findChatGPTActionBar`, or (b) adjust button injection order (insert before the new bar, not after it).
+**Lesson:** Any time ChatGPT ships a new inline feature (Canvas, composition bar, tool-use widgets), re-run `findChatGPTActionBar` in the console on a live page to verify it's still selecting the right element.
+**Related files:** `content.js` (`findChatGPTActionBar`, `addChatGPTButtons`, `insertBeforeMoreButton`).
+
+---
+
 ## v4.3 planned features
 
 ### High priority
