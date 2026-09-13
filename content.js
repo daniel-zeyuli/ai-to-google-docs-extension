@@ -301,10 +301,25 @@
       if (tag === 'hr') return '\n---\n';
       if (tag === 'strong' || tag === 'b') return `**${getInner(node)}**`;
       if (tag === 'em' || tag === 'i') return `*${getInner(node)}*`;
-      if (tag === 'sub') { const i = getInner(node); return i ? `~${i}~` : ''; }
-      if (tag === 'sup') { const i = getInner(node); return i ? `^${i}^` : ''; }
+      if (tag === 'sub') { const i = getInner(node).trim(); return i ? `~${i}~` : ''; }
+      if (tag === 'sup') {
+        const i = getInner(node).trim();
+        if (!i) return '';
+        // Strip any literal ^ chars from inner content — prevents ^^^-type artifacts
+        // when Gemini citation markers embed a caret character inside <sup>.
+        const clean = i.replace(/\^/g, '');
+        return clean ? `^${clean}^` : '';
+      }
       if (tag === 'table') return processTable(node);
       if (tag === 'button' || tag === 'svg' || tag === 'select' || tag === 'input' || tag === 'textarea') return '';
+      // Skip Gemini grounding / source-attribution structural elements —
+      // these are metadata panels, not AI response content.
+      if (tag === 'tool-use' || tag === 'response-sources' ||
+          tag === 'source-attribution' || tag === 'grounding-metadata' ||
+          tag === 'grounding-panel' || tag === 'sources-panel' ||
+          (node.classList && (node.classList.contains('grounding') ||
+                              node.classList.contains('sources-panel') ||
+                              node.classList.contains('footnotes-panel')))) return '';
       if (tag === 'a') {
         if (node.querySelector('img')) {
           const inner = getInner(node);
@@ -361,6 +376,8 @@
         contentDiv = messageEl.querySelector('.markdown-main-panel') ||
                      messageEl.querySelector('.model-response-text') ||
                      messageEl.querySelector('.response-content') ||
+                     messageEl.querySelector('[class*="response-text"]:not([class*="source"])') ||
+                     messageEl.querySelector('message-content') ||
                      messageEl;
       } else if (isClaude) {
         // Primary: .standard-markdown (current Claude markdown wrapper).
