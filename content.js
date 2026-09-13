@@ -14,6 +14,7 @@
   const isChatGPT = location.hostname.includes('chatgpt.com') || location.hostname.includes('chat.openai.com');
   const isClaude = location.hostname.includes('claude.ai');
   const isDeepSeek = location.hostname.includes('chat.deepseek.com');
+  const isPerplexity = location.hostname.includes('perplexity.ai');
 
   const DRIVE_ICON_SVG = `<svg width="15" height="13" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:inline-block;vertical-align:text-bottom"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066DA"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0-1.2 4.5h27.5z" fill="#00AC47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#EA4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832D"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684FC"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#FFBA00"/></svg>`;
   const DOCX_ICON_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:inline-block;vertical-align:text-bottom"><rect x="2" y="1" width="20" height="22" rx="2" fill="#2B579A"/><path d="M7 9.5l1.5 5 1.5-3.5 1.5 3.5 1.5-5" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
@@ -390,6 +391,10 @@
         contentDiv = messageEl.querySelector('.ds-markdown') ||
                      messageEl.querySelector('[class*="markdown"]') ||
                      messageEl;
+      } else if (isPerplexity) {
+        contentDiv = messageEl.querySelector('.prose') ||
+                     messageEl.querySelector('[class*="prose"]') ||
+                     messageEl;
       } else {
         contentDiv = messageEl;
       }
@@ -565,13 +570,18 @@
                  document.querySelector('[class*="conversation-title"]') ||
                  document.querySelector('nav [aria-current="page"]');
       if (el) title = el.textContent.trim();
+    } else if (isPerplexity) {
+      const el = document.querySelector('h1') ||
+                 document.querySelector('[class*="query"] h1') ||
+                 document.querySelector('[data-testid*="query"]');
+      if (el) title = el.textContent.trim();
     }
 
     // Fallback: strip platform suffix from document.title
     if (!title) {
       title = document.title
-        .replace(/\s*[-|–]\s*(Google\s+)?(ChatGPT|Claude|Gemini|DeepSeek)\s*$/i, '')
-        .replace(/^(Google\s+)?(ChatGPT|Claude|Gemini|DeepSeek)\s*[-|–]?\s*/i, '')
+        .replace(/\s*[-|–]\s*(Google\s+)?(ChatGPT|Claude|Gemini|DeepSeek|Perplexity)\s*$/i, '')
+        .replace(/^(Google\s+)?(ChatGPT|Claude|Gemini|DeepSeek|Perplexity)\s*[-|–]?\s*/i, '')
         .trim();
     }
 
@@ -631,11 +641,11 @@
     // Header: metadata line + MLA citation line (top of doc — survives appends).
     const now = new Date();
     const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-    const platformName = isGemini ? 'Gemini' : isClaude ? 'Claude' : isDeepSeek ? 'DeepSeek' : 'ChatGPT';
+    const platformName = isGemini ? 'Gemini' : isClaude ? 'Claude' : isDeepSeek ? 'DeepSeek' : isPerplexity ? 'Perplexity' : 'ChatGPT';
     const convTitle = getConversationTitle();
     const metaParts = [platformName, dateStr, ...(convTitle ? [convTitle] : [])];
     const sourceUrl = location.origin + location.pathname;
-    const vendor = isGemini ? 'Google' : isClaude ? 'Anthropic' : isDeepSeek ? 'DeepSeek' : 'OpenAI';
+    const vendor = isGemini ? 'Google' : isClaude ? 'Anthropic' : isDeepSeek ? 'DeepSeek' : isPerplexity ? 'Perplexity' : 'OpenAI';
     const mlaMonths = ['Jan.','Feb.','Mar.','Apr.','May','June','July','Aug.','Sept.','Oct.','Nov.','Dec.'];
     const mlaDate = `${now.getDate()} ${mlaMonths[now.getMonth()]} ${now.getFullYear()}`;
     const citeTitle = convTitle || 'AI conversation';
@@ -796,6 +806,10 @@
       const responses = _claudeFindResponses();
       return responses[responses.length - 1] || null;
     }
+    if (isDeepSeek || isPerplexity) {
+      const responses = getAllAIMessages();
+      return responses[responses.length - 1] || null;
+    }
     return null;
   }
 
@@ -853,6 +867,18 @@
       const all = [
         ...userEls.map(el => ({ el, role: 'You' })),
         ...aiEls.map(el => ({ el, role: 'DeepSeek' }))
+      ].sort((a, b) => a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+      for (const { el, role } of all) {
+        const text = extractMarkdown(el).trim();
+        if (text) turns.push({ role, text });
+      }
+    } else if (isPerplexity) {
+      const userEls = Array.from(document.querySelectorAll('[class*="user"], [data-testid*="user"]'))
+        .filter(el => !el.parentElement?.closest('[class*="user"], [data-testid*="user"]'));
+      const aiEls = _perplexityFindResponses();
+      const all = [
+        ...userEls.map(el => ({ el, role: 'You' })),
+        ...aiEls.map(el => ({ el, role: 'Perplexity' }))
       ].sort((a, b) => a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
       for (const { el, role } of all) {
         const text = extractMarkdown(el).trim();
@@ -944,6 +970,7 @@
     }
     if (isClaude) return _claudeFindResponses();
     if (isDeepSeek) return _deepSeekFindResponses();
+    if (isPerplexity) return _perplexityFindResponses();
     return [];
   }
 
@@ -955,6 +982,22 @@
     return Array.from(document.querySelectorAll(
       '[class*="assistant"] [class*="markdown"], [class*="bot"] [class*="markdown"]'
     )).filter(el => !el.parentElement?.closest('[class*="markdown"]'));
+  }
+
+  function _perplexityFindResponses() {
+    // Primary: top-level .prose containers (Perplexity's markdown renderer)
+    const byProse = Array.from(document.querySelectorAll('.prose'));
+    if (byProse.length > 0) {
+      return byProse.filter(el => !el.parentElement?.closest('.prose'));
+    }
+    // Fallback: answer containers by data-testid or class
+    const byAttr = Array.from(document.querySelectorAll(
+      '[data-testid*="answer"], [class*="answer__"] .prose, [class*="answer"] .markdown'
+    )).filter(el => !el.parentElement?.closest('[data-testid*="answer"], [class*="answer"]'));
+    if (byAttr.length > 0) return byAttr;
+    // Last resort: any element containing meaningful prose-like content
+    return Array.from(document.querySelectorAll('[class*="prose"], [class*="markdown"]'))
+      .filter(el => !el.parentElement?.closest('[class*="prose"], [class*="markdown"]'));
   }
 
   // Robust Claude response finder. Primary signal is `.standard-markdown` — Claude's
@@ -990,6 +1033,10 @@
       const qs = Array.from(document.querySelectorAll('user-query'));
       return qs.length ? qs : Array.from(document.querySelectorAll('message-content[data-content-type="user"]'));
     }
+    if (isDeepSeek) return Array.from(document.querySelectorAll('[class*="user-message"], [class*="human-message"]'))
+                      .filter(el => !el.parentElement?.closest('[class*="user-message"], [class*="human-message"]'));
+    if (isPerplexity) return Array.from(document.querySelectorAll('[data-testid*="user-query"], [class*="userQuery"], [class*="user-query"]'))
+                        .filter(el => !el.parentElement?.closest('[data-testid*="user-query"]'));
     return [];
   }
 
@@ -1051,7 +1098,7 @@
   }
 
   function _buildSelectPanel(messages, thisMessageEl, storageData = {}, appendTarget = null) {
-    const platform = isGemini ? 'Gemini' : isClaude ? 'Claude' : 'ChatGPT';
+    const platform = isGemini ? 'Gemini' : isClaude ? 'Claude' : isDeepSeek ? 'DeepSeek' : isPerplexity ? 'Perplexity' : 'ChatGPT';
     const dark = isDarkMode();
 
     const thisIdx = thisMessageEl
@@ -1148,7 +1195,7 @@
       } else if (exportDest === 'markdown') {
         pathRowText.textContent = 'Saving as: 📝 Markdown (.md)';
       } else if (exportDest === 'drive') {
-        const _platLabel = isGemini ? 'Gemini' : isClaude ? 'Claude' : 'ChatGPT';
+        const _platLabel = isGemini ? 'Gemini' : isClaude ? 'Claude' : isDeepSeek ? 'DeepSeek' : isPerplexity ? 'Perplexity' : 'ChatGPT';
         pathRowText.textContent = `Saving to: 📁 AI Chat Exports / ${_platLabel}`;
       } else {
         pathRowText.textContent = 'Saving to: 💾 local .docx';
@@ -1830,6 +1877,35 @@
     }
   }
 
+  function addPerplexityButtons() {
+    const responses = _perplexityFindResponses();
+    for (const resp of responses) {
+      const container = resp.closest('[class*="answer"], [data-testid*="answer"]') ||
+                        resp.closest('[class*="response"]') ||
+                        resp.parentElement;
+      if (!container) continue;
+      if (container.querySelector('.' + BUTTON_CLASS)) continue;
+
+      // Find action bar via copy button
+      const copyBtn = container.querySelector(
+        'button[aria-label*="copy" i], button[title*="copy" i], ' +
+        'button[class*="copy"], [data-testid*="copy"]'
+      );
+      if (!copyBtn) continue;
+
+      let actionBar = copyBtn.parentElement;
+      for (let i = 0; i < 5 && actionBar; i++) {
+        if (actionBar.querySelectorAll('button, [role="button"]').length >= 2) break;
+        actionBar = actionBar.parentElement;
+      }
+      if (!actionBar || actionBar.querySelector('.' + BUTTON_CLASS)) continue;
+
+      const btn = createExportButton();
+      btn.addEventListener('click', (e) => handleExportClick(e, resp));
+      actionBar.appendChild(btn);
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════
   //  INIT
   // ═══════════════════════════════════════════════════════════════
@@ -1839,6 +1915,7 @@
     if (isGemini) addGeminiButtons();
     if (isClaude) addClaudeButtons();
     if (isDeepSeek) addDeepSeekButtons();
+    if (isPerplexity) addPerplexityButtons();
 
     // Gemini / URL-invariant: close panel when anchor leaves DOM
     const panel = document.querySelector('.cgd-panel');
@@ -2042,7 +2119,7 @@
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'getPlatform') {
-      const platform = isChatGPT ? 'ChatGPT' : isGemini ? 'Gemini' : isClaude ? 'Claude' : null;
+      const platform = isChatGPT ? 'ChatGPT' : isGemini ? 'Gemini' : isClaude ? 'Claude' : isDeepSeek ? 'DeepSeek' : isPerplexity ? 'Perplexity' : null;
       const responseCount = platform ? getAllAIMessages().length : 0;
       sendResponse({ platform, responseCount });
       return;

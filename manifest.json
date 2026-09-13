@@ -45,7 +45,8 @@
         "https://chatgpt.com/*",
         "https://gemini.google.com/*",
         "https://claude.ai/*",
-        "https://chat.deepseek.com/*"
+        "https://chat.deepseek.com/*",
+        "https://www.perplexity.ai/*"
       ],
       "js": [
         "converter.js",

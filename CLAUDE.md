@@ -129,6 +129,8 @@ Update this section whenever a platform redesign forces a selector change. Verif
 - **ChatGPT:** `[data-message-author-role="assistant"]`; action bar via `button[data-testid="copy-turn-action-button"]`; insert before `[data-testid*="more"]`.
 - **Gemini:** `model-response`, `.model-response-text`; copy button via `aria-label="Copy"`.
 - **Claude:** non-code-block `button[aria-label="Copy"]`; **content via `.standard-markdown`** (verified on `chat-ui-core` / Opus 4.7 era). ⚠️ Do NOT use `[class*="font-claude-response"]` — that matches 1000+ unrelated elements (BUG-018). `.prose` is also gone (0 matches). The correct pattern is `.standard-markdown` (one per AI response) plus a walk-up-from-Copy-button fallback.
+- **DeepSeek:** `.ds-markdown` (primary); fallback `[class*="assistant"] [class*="markdown"]`. Copy button: `button[aria-label*="copy" i]`. Needs live DOM verification.
+- **Perplexity:** `.prose` (primary, Tailwind markdown container); fallback `[data-testid*="answer"]`. Copy button: `button[aria-label*="copy" i]` or `[data-testid*="copy"]`. Needs live DOM verification — selectors provisional.
 
 When designing UI for this project, draw references from: **Google Drive's Move dialog** (folder picker), **Notion's "Move to"** (search + recents), **Gmail's label picker** (compact, fast). The folder picker in this extension explicitly mirrors Google Drive's Move dialog so users have zero learning curve.
 
