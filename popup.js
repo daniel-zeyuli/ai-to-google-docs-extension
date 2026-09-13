@@ -8,11 +8,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const optDrive  = document.getElementById('opt-drive');
   const optLocal  = document.getElementById('opt-local');
   const optMd     = document.getElementById('opt-md');
-  const optNotion = document.getElementById('opt-notion');
-  const notionSettings  = document.getElementById('notion-settings');
-  const notionTokenInput = document.getElementById('notion-token');
-  const notionPageInput  = document.getElementById('notion-page-id');
-  const notionDetail     = document.getElementById('notion-detail');
+  const optNotion    = document.getElementById('opt-notion');
+  const optObsidian  = document.getElementById('opt-obsidian');
+  const notionSettings   = document.getElementById('notion-settings');
+  const obsidianSettings = document.getElementById('obsidian-settings');
+  const notionTokenInput  = document.getElementById('notion-token');
+  const notionPageInput   = document.getElementById('notion-page-id');
+  const notionDetail      = document.getElementById('notion-detail');
+  const obsidianVaultInput = document.getElementById('obsidian-vault');
+  const obsidianDetail     = document.getElementById('obsidian-detail');
   const modeHint = document.getElementById('mode-hint');
   const shortcutDisplay = document.getElementById('shortcut-display');
   const shortcutCustomize = document.getElementById('shortcut-customize');
@@ -26,12 +30,14 @@ document.addEventListener('DOMContentLoaded', () => {
     select: chrome.i18n.getMessage('hintPick') || 'Opens panel to pick responses'
   };
 
-  chrome.storage.local.get(['exportDest', 'defaultExportMode', 'notionToken', 'notionParentPageId'], (d) => {
+  chrome.storage.local.get(['exportDest', 'defaultExportMode', 'notionToken', 'notionParentPageId', 'obsidianVault'], (d) => {
     currentDest = d.exportDest || 'drive';
     currentMode = d.defaultExportMode || 'last';
-    if (d.notionToken)      notionTokenInput.value = d.notionToken;
+    if (d.notionToken)        notionTokenInput.value = d.notionToken;
     if (d.notionParentPageId) notionPageInput.value = d.notionParentPageId;
+    if (d.obsidianVault)      obsidianVaultInput.value = d.obsidianVault;
     _updateNotionDetail(d.notionToken, d.notionParentPageId);
+    _updateObsidianDetail(d.obsidianVault);
     applyDest();
     applyMode();
   });
@@ -47,12 +53,18 @@ document.addEventListener('DOMContentLoaded', () => {
     else                 notionDetail.textContent = 'Connect your workspace';
   }
 
+  function _updateObsidianDetail(vault) {
+    obsidianDetail.textContent = vault ? `Vault: ${vault}` : 'Open in your vault';
+  }
+
   function applyDest() {
-    optDrive.classList.toggle('active',  currentDest === 'drive');
-    optLocal.classList.toggle('active',  currentDest === 'local');
-    optMd.classList.toggle('active',     currentDest === 'markdown');
-    optNotion.classList.toggle('active', currentDest === 'notion');
-    notionSettings.classList.toggle('visible', currentDest === 'notion');
+    optDrive.classList.toggle('active',    currentDest === 'drive');
+    optLocal.classList.toggle('active',    currentDest === 'local');
+    optMd.classList.toggle('active',       currentDest === 'markdown');
+    optNotion.classList.toggle('active',   currentDest === 'notion');
+    optObsidian.classList.toggle('active', currentDest === 'obsidian');
+    notionSettings.classList.toggle('visible',   currentDest === 'notion');
+    obsidianSettings.classList.toggle('visible', currentDest === 'obsidian');
   }
 
   function applyMode() {
@@ -62,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
     modeHint.textContent = MODE_HINTS[currentMode] || '';
   }
 
-  [optDrive, optLocal, optMd, optNotion].forEach(opt => {
+  [optDrive, optLocal, optMd, optNotion, optObsidian].forEach(opt => {
     opt.addEventListener('click', () => {
       currentDest = opt.dataset.dest;
       chrome.storage.local.set({ exportDest: currentDest });
@@ -87,6 +99,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('notion-help-btn').addEventListener('click', () => {
     chrome.tabs.create({ url: 'https://developers.notion.com/docs/create-a-notion-integration#getting-started' });
+  });
+
+  obsidianVaultInput.addEventListener('input', () => {
+    const val = obsidianVaultInput.value.trim();
+    chrome.storage.local.set({ obsidianVault: val });
+    _updateObsidianDetail(val);
   });
 
   document.querySelectorAll('.mode-tab').forEach(b => {

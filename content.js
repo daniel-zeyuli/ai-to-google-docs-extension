@@ -695,6 +695,28 @@
       return;
     }
 
+    if (exportDest === 'obsidian') {
+      showToast('⏳ Opening in Obsidian...');
+      try {
+        const { obsidianVault } = await new Promise(resolve => {
+          chrome.storage.local.get('obsidianVault', resolve);
+        });
+        const vault = obsidianVault || '';
+        const safeFile = (docTitle || 'AI Chat Export').replace(/[\\/:*?"<>|#^[\]]/g, '').trim().slice(0, 80);
+        const yamlFrontmatter = `---\ntitle: "${safeFile.replace(/"/g, '\\"')}"\nsource: ${sourceUrl}\nplatform: ${platformName}\ndate: ${dateStr}\ntags: [ai-export]\n---\n\n`;
+        const fullContent = yamlFrontmatter + markdown;
+        const params = new URLSearchParams();
+        if (vault) params.set('vault', vault);
+        params.set('file', safeFile);
+        params.set('content', fullContent);
+        window.open('obsidian://new?' + params.toString(), '_blank');
+        showToast('✅ Sent to Obsidian! Check the app.', false, 4000);
+      } catch (e) {
+        showToast('❌ Obsidian export failed: ' + e.message, true);
+      }
+      return;
+    }
+
     if (exportDest === 'notion') {
       showToast('⏳ Sending to Notion...');
       try {
@@ -1189,10 +1211,16 @@
     btnNotion.title = 'Export to Notion';
     btnNotion.innerHTML = '<span style="font-size:13px;line-height:1">📋</span><span>Notion</span>';
 
+    const btnObsidian = document.createElement('button');
+    btnObsidian.className = 'cgd-dest-btn';
+    btnObsidian.title = 'Open in Obsidian';
+    btnObsidian.innerHTML = '<span style="font-size:13px;line-height:1">🔮</span><span>Obsidian</span>';
+
     destRow.appendChild(btnDrive);
     destRow.appendChild(btnLocal);
     destRow.appendChild(btnMd);
     destRow.appendChild(btnNotion);
+    destRow.appendChild(btnObsidian);
 
     // ── Path confirmation row ──
     const pathRow = document.createElement('div');
@@ -1229,6 +1257,8 @@
         pathRowText.textContent = 'Saving as: 📝 Markdown (.md)';
       } else if (exportDest === 'notion') {
         pathRowText.textContent = 'Saving to: 📋 Notion';
+      } else if (exportDest === 'obsidian') {
+        pathRowText.textContent = 'Opening in: 🔮 Obsidian';
       } else if (exportDest === 'drive') {
         const _platLabel = isGemini ? 'Gemini' : isClaude ? 'Claude' : isDeepSeek ? 'DeepSeek' : isPerplexity ? 'Perplexity' : 'ChatGPT';
         pathRowText.textContent = `Saving to: 📁 AI Chat Exports / ${_platLabel}`;
@@ -1243,9 +1273,10 @@
         const shortName = (target.fileName || '').length > 20 ? target.fileName.slice(0, 18) + '…' : (target.fileName || 'doc');
         exportBtn.textContent = `Append to "${shortName}" →`;
       } else {
-        if (exportDest === 'local')    exportBtn.textContent = 'Save .docx →';
-        else if (exportDest === 'notion') exportBtn.textContent = 'Send to Notion →';
-        else                           exportBtn.textContent = 'Export to Docs →';
+        if (exportDest === 'local')          exportBtn.textContent = 'Save .docx →';
+        else if (exportDest === 'notion')    exportBtn.textContent = 'Send to Notion →';
+        else if (exportDest === 'obsidian')  exportBtn.textContent = 'Open in Obsidian →';
+        else                                 exportBtn.textContent = 'Export to Docs →';
       }
     }
 
@@ -1315,7 +1346,8 @@
       btnDrive.classList.toggle('cgd-dest-active', exportDest === 'drive');
       btnLocal.classList.toggle('cgd-dest-active', exportDest === 'local');
       btnMd.classList.toggle('cgd-dest-active', exportDest === 'markdown');
-      btnNotion.classList.toggle('cgd-dest-active', exportDest === 'notion');
+      btnNotion.classList.toggle('cgd-dest-active',    exportDest === 'notion');
+      btnObsidian.classList.toggle('cgd-dest-active', exportDest === 'obsidian');
       if (exportDest !== 'drive') {
         selectedChip = null;
         recentRow.querySelectorAll('.cgd-recent-chip').forEach(c => c.classList.remove('cgd-chip-selected'));
@@ -1336,7 +1368,8 @@
     btnDrive.addEventListener('click',  () => setDest('drive'));
     btnLocal.addEventListener('click',  () => setDest('local'));
     btnMd.addEventListener('click',     () => setDest('markdown'));
-    btnNotion.addEventListener('click', () => setDest('notion'));
+    btnNotion.addEventListener('click',    () => setDest('notion'));
+    btnObsidian.addEventListener('click', () => setDest('obsidian'));
 
     // ── Pick area ──
     const pickArea = document.createElement('div');
@@ -1444,9 +1477,10 @@
       const shortName = (appendTarget.fileName || '').length > 20 ? appendTarget.fileName.slice(0, 18) + '…' : (appendTarget.fileName || 'doc');
       exportBtn.textContent = `Append to "${shortName}" →`;
     } else {
-      if (exportDest === 'local')        exportBtn.textContent = 'Save .docx →';
-      else if (exportDest === 'notion') exportBtn.textContent = 'Send to Notion →';
-      else                              exportBtn.textContent = 'Export to Docs →';
+      if (exportDest === 'local')          exportBtn.textContent = 'Save .docx →';
+      else if (exportDest === 'notion')   exportBtn.textContent = 'Send to Notion →';
+      else if (exportDest === 'obsidian') exportBtn.textContent = 'Open in Obsidian →';
+      else                                exportBtn.textContent = 'Export to Docs →';
     }
 
     footerMain.appendChild(countLabel);
@@ -1809,6 +1843,9 @@
     } else if (exportDest === 'notion') {
       pathSpan.innerHTML = '<span style="font-size:12px;line-height:1;margin-right:3px">📋</span><span>Notion</span>';
       btn.title = 'Export to Notion';
+    } else if (exportDest === 'obsidian') {
+      pathSpan.innerHTML = '<span style="font-size:12px;line-height:1;margin-right:3px">🔮</span><span>Obsidian</span>';
+      btn.title = 'Open in Obsidian';
     } else {
       pathSpan.innerHTML = DRIVE_ICON_SVG + '<span>Export</span>';
       btn.title = 'Export to Google Docs';

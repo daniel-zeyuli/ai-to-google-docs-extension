@@ -246,6 +246,14 @@
       <span class="save-detail" id="notion-detail">Connect your workspace</span>
     </div>
   </div>
+  <div class="save-opt" id="opt-obsidian" data-dest="obsidian">
+    <span class="save-radio"></span>
+    <span class="save-icon">🔮</span>
+    <div class="save-info">
+      <span class="save-title">Obsidian</span>
+      <span class="save-detail" id="obsidian-detail">Open in your vault</span>
+    </div>
+  </div>
 </div>
 
 <!-- Notion settings (shown when Notion is selected) -->
@@ -255,6 +263,13 @@
   <span class="notion-field-label">Parent Page ID</span>
   <input class="notion-input" id="notion-page-id" type="text" placeholder="Page ID or Notion URL">
   <button class="notion-help" id="notion-help-btn">How to get these →</button>
+</div>
+
+<!-- Obsidian settings (shown when Obsidian is selected) -->
+<div class="notion-settings" id="obsidian-settings">
+  <span class="notion-field-label">Vault Name</span>
+  <input class="notion-input" id="obsidian-vault" type="text" placeholder="My Vault">
+  <span class="notion-field-label" style="margin-top:4px;display:block;font-size:10px;color:var(--muted)">Obsidian must be open for the link to work.</span>
 </div>
 
 <!-- Default mode -->
