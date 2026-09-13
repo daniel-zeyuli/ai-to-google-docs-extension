@@ -147,6 +147,33 @@
       transition: color 0.15s;
     }
     .feedback-link:hover { color: var(--blue); text-decoration: underline; }
+    /* ── Notion settings sub-form ── */
+    .notion-settings {
+      display: none;
+      padding: 4px 10px 8px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg2);
+    }
+    .notion-settings.visible { display: block; }
+    .notion-field-label {
+      font-size: 10px; color: var(--muted);
+      margin: 4px 0 2px; display: block;
+    }
+    .notion-input {
+      width: 100%; padding: 5px 7px;
+      font-size: 11px; color: var(--text);
+      background: var(--bg); border: 1px solid var(--faint);
+      border-radius: 5px; box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .notion-input:focus { outline: none; border-color: var(--blue); }
+    .notion-help {
+      font-size: 10px; color: var(--blue);
+      margin-top: 5px; display: block;
+      cursor: pointer; background: none; border: none; padding: 0;
+    }
+    .notion-help:hover { text-decoration: underline; }
+
     .pro-section {
       padding: 7px 10px 7px;
       border-top: 1px solid var(--border);
@@ -207,10 +234,27 @@
     <span class="save-radio"></span>
     <span class="save-icon">📝</span>
     <div class="save-info">
-      <span class="save-title" data-i18n="mdTitle">Markdown .md</span>
-      <span class="save-detail" data-i18n="mdDetail">Save as plain markdown</span>
+      <span class="save-title">Markdown .md</span>
+      <span class="save-detail">Save as plain markdown</span>
     </div>
   </div>
+  <div class="save-opt" id="opt-notion" data-dest="notion">
+    <span class="save-radio"></span>
+    <span class="save-icon">📋</span>
+    <div class="save-info">
+      <span class="save-title">Notion</span>
+      <span class="save-detail" id="notion-detail">Connect your workspace</span>
+    </div>
+  </div>
+</div>
+
+<!-- Notion settings (shown when Notion is selected) -->
+<div class="notion-settings" id="notion-settings">
+  <span class="notion-field-label">Integration Token</span>
+  <input class="notion-input" id="notion-token" type="password" placeholder="secret_...">
+  <span class="notion-field-label">Parent Page ID</span>
+  <input class="notion-input" id="notion-page-id" type="text" placeholder="Page ID or Notion URL">
+  <button class="notion-help" id="notion-help-btn">How to get these →</button>
 </div>
 
 <!-- Default mode -->

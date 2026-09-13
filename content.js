@@ -695,6 +695,33 @@
       return;
     }
 
+    if (exportDest === 'notion') {
+      showToast('⏳ Sending to Notion...');
+      try {
+        const settings = await new Promise(resolve => {
+          chrome.storage.local.get(['notionToken', 'notionParentPageId'], resolve);
+        });
+        if (!settings.notionToken || !settings.notionParentPageId) {
+          showToast('❌ Notion not configured. Please set your token and page ID in the extension popup.', true, 6000);
+          return;
+        }
+        const result = await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage(
+            { action: 'exportToNotion', markdown, title: docTitle, token: settings.notionToken, parentPageId: settings.notionParentPageId },
+            (resp) => {
+              if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+              else if (resp?.success) resolve(resp);
+              else reject(new Error(resp?.error || 'Notion export failed'));
+            }
+          );
+        });
+        showToast(`✅ Created page in Notion! <a href="${result.url}" target="_blank" style="color:#fff;text-decoration:underline">Open ↗</a>`, false, 6000);
+      } catch (e) {
+        showToast('❌ Notion export failed: ' + e.message, true);
+      }
+      return;
+    }
+
     let blob;
     try {
       blob = window.convertChatGPTToDocx(markdown, imageMap);
@@ -1157,9 +1184,15 @@
     btnMd.title = 'Local Markdown file (.md)';
     btnMd.innerHTML = '<span style="font-size:13px;line-height:1">📝</span><span>Markdown</span>';
 
+    const btnNotion = document.createElement('button');
+    btnNotion.className = 'cgd-dest-btn';
+    btnNotion.title = 'Export to Notion';
+    btnNotion.innerHTML = '<span style="font-size:13px;line-height:1">📋</span><span>Notion</span>';
+
     destRow.appendChild(btnDrive);
     destRow.appendChild(btnLocal);
     destRow.appendChild(btnMd);
+    destRow.appendChild(btnNotion);
 
     // ── Path confirmation row ──
     const pathRow = document.createElement('div');
@@ -1194,6 +1227,8 @@
         pathRowText.textContent = `📄 Appending to: ${shortName}`;
       } else if (exportDest === 'markdown') {
         pathRowText.textContent = 'Saving as: 📝 Markdown (.md)';
+      } else if (exportDest === 'notion') {
+        pathRowText.textContent = 'Saving to: 📋 Notion';
       } else if (exportDest === 'drive') {
         const _platLabel = isGemini ? 'Gemini' : isClaude ? 'Claude' : isDeepSeek ? 'DeepSeek' : isPerplexity ? 'Perplexity' : 'ChatGPT';
         pathRowText.textContent = `Saving to: 📁 AI Chat Exports / ${_platLabel}`;
@@ -1208,7 +1243,9 @@
         const shortName = (target.fileName || '').length > 20 ? target.fileName.slice(0, 18) + '…' : (target.fileName || 'doc');
         exportBtn.textContent = `Append to "${shortName}" →`;
       } else {
-        exportBtn.textContent = exportDest === 'local' ? 'Save .docx →' : 'Export to Docs →';
+        if (exportDest === 'local')    exportBtn.textContent = 'Save .docx →';
+        else if (exportDest === 'notion') exportBtn.textContent = 'Send to Notion →';
+        else                           exportBtn.textContent = 'Export to Docs →';
       }
     }
 
@@ -1278,6 +1315,7 @@
       btnDrive.classList.toggle('cgd-dest-active', exportDest === 'drive');
       btnLocal.classList.toggle('cgd-dest-active', exportDest === 'local');
       btnMd.classList.toggle('cgd-dest-active', exportDest === 'markdown');
+      btnNotion.classList.toggle('cgd-dest-active', exportDest === 'notion');
       if (exportDest !== 'drive') {
         selectedChip = null;
         recentRow.querySelectorAll('.cgd-recent-chip').forEach(c => c.classList.remove('cgd-chip-selected'));
@@ -1295,9 +1333,10 @@
       document.querySelectorAll('.' + BUTTON_CLASS).forEach(btn => _updateExportBtnContent(btn));
       updateExportBtnLabel();
     }
-    btnDrive.addEventListener('click', () => setDest('drive'));
-    btnLocal.addEventListener('click', () => setDest('local'));
-    btnMd.addEventListener('click',    () => setDest('markdown'));
+    btnDrive.addEventListener('click',  () => setDest('drive'));
+    btnLocal.addEventListener('click',  () => setDest('local'));
+    btnMd.addEventListener('click',     () => setDest('markdown'));
+    btnNotion.addEventListener('click', () => setDest('notion'));
 
     // ── Pick area ──
     const pickArea = document.createElement('div');
@@ -1405,7 +1444,9 @@
       const shortName = (appendTarget.fileName || '').length > 20 ? appendTarget.fileName.slice(0, 18) + '…' : (appendTarget.fileName || 'doc');
       exportBtn.textContent = `Append to "${shortName}" →`;
     } else {
-      exportBtn.textContent = exportDest === 'local' ? 'Save .docx →' : 'Export to Docs →';
+      if (exportDest === 'local')        exportBtn.textContent = 'Save .docx →';
+      else if (exportDest === 'notion') exportBtn.textContent = 'Send to Notion →';
+      else                              exportBtn.textContent = 'Export to Docs →';
     }
 
     footerMain.appendChild(countLabel);
@@ -1765,6 +1806,9 @@
     } else if (exportDest === 'markdown') {
       pathSpan.innerHTML = MARKDOWN_ICON_SVG + '<span>Export .md</span>';
       btn.title = 'Export as Markdown';
+    } else if (exportDest === 'notion') {
+      pathSpan.innerHTML = '<span style="font-size:12px;line-height:1;margin-right:3px">📋</span><span>Notion</span>';
+      btn.title = 'Export to Notion';
     } else {
       pathSpan.innerHTML = DRIVE_ICON_SVG + '<span>Export</span>';
       btn.title = 'Export to Google Docs';

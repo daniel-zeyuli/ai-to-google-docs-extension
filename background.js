@@ -53,6 +53,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'exportToNotion') {
+    exportToNotion(request.markdown, request.title, request.token, request.parentPageId)
+      .then(result => sendResponse(result))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
 });
 
 // ── Context menu: export selected text ──
@@ -493,6 +500,181 @@ function parseInlineRuns(text, basePos) {
   }
   parts.push(text.slice(lastIndex));
   return { plain: parts.join(''), fmts };
+}
+
+// ── Notion export ──
+async function exportToNotion(markdown, title, token, parentPageId) {
+  if (!token) throw new Error('No Notion integration token. Please configure it in the extension popup.');
+  if (!parentPageId) throw new Error('No Notion parent page ID. Please configure it in the extension popup.');
+  // Normalize page ID: remove dashes, then re-insert in canonical UUID format
+  const rawId = parentPageId.replace(/-/g, '');
+  const pageId = rawId.length === 32
+    ? `${rawId.slice(0,8)}-${rawId.slice(8,12)}-${rawId.slice(12,16)}-${rawId.slice(16,20)}-${rawId.slice(20)}`
+    : parentPageId;
+  const blocks = markdownToNotionBlocks(markdown);
+  return await createNotionPage(token, pageId, title || 'AI Chat Export', blocks);
+}
+
+async function createNotionPage(token, parentPageId, title, blocks) {
+  const CHUNK = 100;
+  const headers = {
+    'Authorization': 'Bearer ' + token,
+    'Notion-Version': '2022-06-28',
+    'Content-Type': 'application/json'
+  };
+
+  const createBody = {
+    parent: { page_id: parentPageId },
+    properties: { title: { title: [{ type: 'text', text: { content: title.slice(0, 2000) } }] } },
+    children: blocks.slice(0, CHUNK)
+  };
+
+  const resp = await fetch('https://api.notion.com/v1/pages', {
+    method: 'POST', headers, body: JSON.stringify(createBody)
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    let msg = errText;
+    try { msg = JSON.parse(errText)?.message || errText; } catch {}
+    if (resp.status === 401) throw new Error('Invalid Notion token. Please check your integration token in the popup.');
+    if (resp.status === 404) throw new Error('Parent page not found. Make sure the integration is shared with the page.');
+    throw new Error(`Notion API error (${resp.status}): ${msg}`);
+  }
+
+  const page = await resp.json();
+
+  // Append remaining blocks in chunks of 100
+  for (let i = CHUNK; i < blocks.length; i += CHUNK) {
+    const chunk = blocks.slice(i, i + CHUNK);
+    await fetch(`https://api.notion.com/v1/blocks/${page.id}/children`, {
+      method: 'PATCH', headers, body: JSON.stringify({ children: chunk })
+    }).catch(() => {}); // silently skip partial failures on oversized exports
+  }
+
+  return { success: true, pageId: page.id, url: page.url };
+}
+
+function markdownToNotionBlocks(markdown) {
+  const blocks = [];
+  // Strip image markers — Notion doesn't support image upload via API in this flow
+  const cleaned = markdown.replace(/\[\[IMG:\d+\]\]/g, '').replace(/\n{3,}/g, '\n\n').trim();
+  const lines = cleaned.split('\n');
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code block
+    if (line.startsWith('```')) {
+      const lang = line.slice(3).trim().toLowerCase() || 'plain text';
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith('```')) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      const codeContent = codeLines.join('\n').slice(0, 2000);
+      blocks.push({
+        type: 'code',
+        code: { language: _notionCodeLang(lang), rich_text: [{ type: 'text', text: { content: codeContent } }] }
+      });
+      i++;
+      continue;
+    }
+
+    // Headings
+    const hm = line.match(/^(#{1,3})\s+(.+)$/);
+    if (hm) {
+      const type = `heading_${hm[1].length}`;
+      blocks.push({ type, [type]: { rich_text: _notionRichText(hm[2]) } });
+      i++;
+      continue;
+    }
+
+    // Divider
+    if (/^-{3,}$/.test(line.trim())) {
+      blocks.push({ type: 'divider', divider: {} });
+      i++;
+      continue;
+    }
+
+    // Bulleted list
+    const ulm = line.match(/^[\s]*[-*+]\s+(.+)$/);
+    if (ulm) {
+      blocks.push({ type: 'bulleted_list_item', bulleted_list_item: { rich_text: _notionRichText(ulm[1]) } });
+      i++;
+      continue;
+    }
+
+    // Numbered list
+    const olm = line.match(/^\s*\d+\.\s+(.+)$/);
+    if (olm) {
+      blocks.push({ type: 'numbered_list_item', numbered_list_item: { rich_text: _notionRichText(olm[1]) } });
+      i++;
+      continue;
+    }
+
+    // Blockquote → callout
+    const bqm = line.match(/^>\s?(.*)$/);
+    if (bqm) {
+      blocks.push({ type: 'quote', quote: { rich_text: _notionRichText(bqm[1]) } });
+      i++;
+      continue;
+    }
+
+    // Empty line → skip
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+
+    // Normal paragraph
+    blocks.push({ type: 'paragraph', paragraph: { rich_text: _notionRichText(line) } });
+    i++;
+  }
+
+  return blocks;
+}
+
+// Map common language identifiers to Notion's accepted code language values
+function _notionCodeLang(lang) {
+  const map = {
+    js: 'javascript', ts: 'typescript', py: 'python', rb: 'ruby',
+    sh: 'shell', bash: 'shell', zsh: 'shell', yml: 'yaml',
+    html: 'html', css: 'css', json: 'json', sql: 'sql',
+    java: 'java', c: 'c', cpp: 'c++', 'c++': 'c++',
+    go: 'go', rust: 'rust', swift: 'swift', kotlin: 'kotlin',
+    r: 'r', matlab: 'matlab', scala: 'scala',
+    markdown: 'markdown', md: 'markdown',
+  };
+  return map[lang] || lang || 'plain text';
+}
+
+// Convert markdown inline syntax to Notion rich_text array
+function _notionRichText(text) {
+  if (!text) return [{ type: 'text', text: { content: '' } }];
+  const parts = [];
+  // Matches ***bold-italic***, **bold**, *italic*, `code`, ~~strikethrough~~
+  const regex = /(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*(?!\*|\s)[\s\S]+?(?<!\s|\*)\*(?!\*)|`[^`\n]+`|~~[^~]+~~)/g;
+  let lastIdx = 0;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > lastIdx) parts.push(_notionTextPart(text.slice(lastIdx, m.index), {}));
+    const raw = m[0];
+    if (raw.startsWith('***'))       parts.push(_notionTextPart(raw.slice(3,-3), { bold: true, italic: true }));
+    else if (raw.startsWith('**'))   parts.push(_notionTextPart(raw.slice(2,-2), { bold: true }));
+    else if (raw.startsWith('~~'))   parts.push(_notionTextPart(raw.slice(2,-2), { strikethrough: true }));
+    else if (raw.startsWith('`'))    parts.push(_notionTextPart(raw.slice(1,-1), { code: true }));
+    else                             parts.push(_notionTextPart(raw.slice(1,-1), { italic: true }));
+    lastIdx = m.index + raw.length;
+  }
+  if (lastIdx < text.length) parts.push(_notionTextPart(text.slice(lastIdx), {}));
+  return parts.filter(p => p.text.content);
+}
+
+function _notionTextPart(content, annotations) {
+  return { type: 'text', text: { content: content.slice(0, 2000) }, annotations };
 }
 
 // ── Build multipart body for Drive upload ──

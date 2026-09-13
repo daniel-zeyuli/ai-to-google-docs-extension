@@ -60,7 +60,9 @@ These are not style preferences. Each one was learned the hard way — see `BUGS
 ExportEntry: { fileName, url, fileId, exportedAt? }   // exportedAt = ms; absent on legacy entries — handle gracefully
 lastExports:        { [hostname+pathname]: ExportEntry[] }   // ≤ 3 per conversation
 globalRecentDocs:   ExportEntry[]                            // ≤ 5 globally
-exportDest:         'drive' | 'local' | 'markdown'           // 'markdown' added v1.0
+exportDest:         'drive' | 'local' | 'markdown' | 'notion' // 'notion' added v4.4
+notionToken:        string (user's Notion integration token, stored as-is)
+notionParentPageId: string (UUID format, normalized on save in popup.js)
 defaultExportMode:  'last' | 'full' | 'select'
 exportFolderId:     auto-created "AI Chat Exports" parent folder ID
 exportFolderIds:    { [platformName]: subfolderId }          // per-platform subfolder IDs (v1.0)
