@@ -1823,6 +1823,17 @@
   // ═══════════════════════════════════════════════════════════════
 
   function insertBeforeMoreButton(container, el) {
+    // ChatGPT injects "询问 ChatGPT / 开始写作" spans (class: whitespace-nowrap + select-none)
+    // into the action bar. Insert our button before them to keep it visible.
+    const promptSpan = container.querySelector(
+      'span[class*="whitespace-nowrap"][class*="select-none"]'
+    );
+    if (promptSpan) {
+      let anchor = promptSpan;
+      while (anchor.parentElement !== container) anchor = anchor.parentElement;
+      container.insertBefore(el, anchor);
+      return;
+    }
     const moreBtn = container.querySelector(
       'button[aria-label*="more" i], button[aria-label*="option" i], ' +
       'button[data-tooltip*="more" i], button[data-testid*="more"]'
