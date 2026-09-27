@@ -290,6 +290,36 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 
 ---
 
+### BUG-023: ChatGPT complex/display math exports as raw LaTeX text with a stray "]"
+**Date:** 2026-09-19
+**Symptom:** Exporting ChatGPT responses containing display math (e.g. solving equations, calculus) to Notion/Obsidian produced numbered items like `2x^2+5x-3=0` and `\frac{3x+2}{x-1}=4` as plain text — no `$$...$$` wrapping — each followed by a stray `]` on its own line. Inline math and Claude exports were unaffected.
+**Root cause:** Live DOM inspection showed ChatGPT's `span[role="math"]` wrapper (added for BUG's earlier Strategy 0b fix) has `data-math-source=""` — an empty string, which is falsy in JS, so Strategy 0b's `if (src)` check silently skipped it. The actual raw TeX source lives as a separate text node inside a sibling/nearby `<p dir="auto">` element, followed by `<br>` and a literal `]` text node (a ChatGPT-side rendering/accessibility artifact). `processNode`'s generic `<p>` handler had no knowledge of this pattern and just emitted the raw text nodes verbatim.
+**Fix:** Added a targeted check in `processNode` before the generic `<p>` handler: if a `<p dir="auto">` ends with `<br>` followed by a lone `]` text node, and a `span[role="math"]` exists in the paragraph or its previous sibling, extract the text before the `<br>` as the TeX source and wrap it in `$$...$$` (or `$...$` for inline, detected via `.katex-display` presence).
+**Lesson:** An empty string attribute (`data-math-source=""`) is falsy and silently bypasses `if (src)` guards — don't assume "attribute present" means "attribute has content" when a platform's DOM occasionally ships a placeholder/empty value during a rendering fallback state.
+**Related files:** `content.js` (`processNode`).
+
+---
+
+### BUG-024: ChatGPT export button stuck in wrong location if injected while response was still generating
+**Date:** 2026-09-19
+**Symptom:** During active response generation (streaming), the export button appeared misplaced — off to the right on an earlier line, not next to the three-dot menu at the bottom. Reloading the page after generation finished fixed the placement, but waiting for generation to finish (without reloading) did not.
+**Root cause:** `findChatGPTActionBar` returns `null` while a response is still streaming — ChatGPT hasn't rendered the copy/thumbs/more buttons yet (only a "Stop generating" control exists). `addChatGPTButtons` fell back to appending the button directly into the message content (`contentEl`) in that case. Once generation finished and the real action bar rendered, the existing `container.querySelector('.' + BUTTON_CLASS)` skip-check prevented the button from ever being re-evaluated or moved — it stayed stuck in the fallback spot until a full page reload re-ran the scan from scratch on settled DOM.
+**Fix:** Buttons placed via the fallback path are now tagged with `dataset.cgdFallback = '1'` and wrapped in a `.cgd-fallback-wrapper` div. On every subsequent `addChatGPTButtons` pass (MutationObserver-triggered, ~200ms debounce), if a tagged button is found AND a reliable action bar (verified by checking for a `more`/`thumbs`/`copy` button inside it, not just any `div[role="group"]`) now exists, the same button element is relocated into it via `insertBeforeMoreButton` and the fallback wrapper/tag are removed.
+**Lesson:** Any "inject now, else fall back" pattern keyed off a `container.querySelector('.' + BUTTON_CLASS)` skip-check needs a reconciliation path — otherwise a fallback placement made during a transient DOM state (streaming, still-loading) becomes permanent even after the real target renders.
+**Related files:** `content.js` (`addChatGPTButtons`, `findChatGPTActionBar`).
+
+---
+
+### BUG-025: `https://*/*` shipped as a required host permission instead of optional
+**Date:** 2026-09-19
+**Symptom:** Chrome Web Store flagged the listing for in-depth review over broad host permissions. `manifest.json` had `https://*/*` in `host_permissions` (required, granted silently at install) instead of `optional_host_permissions` as `ARCH.md` already documented it should be. It was also the only thing making Notion export work, since `api.notion.com` was never listed explicitly, and it was masking a separate bug: `https://oaiusercontent.com/*` doesn't match subdomains like `files.oaiusercontent.com`, where ChatGPT actually serves images (`https://*.oaiusercontent.com/*` is required to match subdomains).
+**Root cause:** Manifest drifted out of sync with the documented architecture — `ARCH.md` line 218 already specified `<all_urls>` as optional, but `manifest.json` never matched it. Nobody calls `chrome.permissions.request()` anywhere, so the "optional" grant, if it had been optional, would never have been requested — it just happened to already be present as a required permission, hiding both issues.
+**Fix:** Moved `https://*/*` to `optional_host_permissions`. Added `https://api.notion.com/*` explicitly to `host_permissions`. Changed `https://oaiusercontent.com/*` to `https://*.oaiusercontent.com/*`. Added `_ensureImageFetchPermission()` in `content.js`, called lazily inside `_captureImages()` only when an image actually needs the cross-origin fetch fallback (Strategy 1 canvas capture already failed). This runs inside the user-gesture chain from the Export button click — **not** in `background.js`, since `chrome.permissions.request()` silently fails from a service worker (see `~/.claude/CLAUDE.md` Chrome Extension Notes).
+**Lesson:** A documented "optional permission" design (in `ARCH.md`) is not the same as an implemented one — if the manifest still lists it as required and nothing ever calls `chrome.permissions.request()`, the docs are aspirational, not accurate. Check the manifest against the docs, not just the docs against memory. Also: MV3 host permission match patterns are exact-host by default — `example.com/*` does NOT cover `sub.example.com`; always use `*.example.com/*` unless you've confirmed the API is served from the bare domain.
+**Related files:** `manifest.json`, `content.js` (`_captureImages`, `_ensureImageFetchPermission`), `ARCH.md`.
+
+---
+
 ## v4.3 planned features
 
 ### High priority

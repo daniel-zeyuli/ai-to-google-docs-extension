@@ -18,6 +18,13 @@ Items logged here instead of fixing inline. Each entry: date, file:line, observa
 **Status:** Fixed in v4.2.0 — `getAllAIMessages()` now includes DALL-E turns (turns with action bar but no `[data-message-author-role="assistant"]`) via a supplementary pass.
 **Files:** `content.js` (`getAllAIMessages`)
 
+### PLATFORM-001 — Re-enable DeepSeek and Perplexity once selectors are verified stable
+**Date:** 2026-09-19
+**Status:** Deferred, not shipped in v4.3. `chat.deepseek.com` / `perplexity.ai` removed from `manifest.json` `content_scripts.matches` for this release. The DOM extraction/button-injection code for both platforms already exists in `content.js` (`addDeepSeekButtons`, `addPerplexityButtons`, `_deepSeekFindResponses`, etc.) and was left in place — only the manifest matches were pulled.
+**Why:** Live testing found both platforms unstable. Shipping content scripts on domains the store listing never mentions is also an undisclosed-functionality review risk, and the extension was already flagged for in-depth review over host permissions — stacking another disclosure issue on top of that was worth avoiding this release.
+**Next step:** Once selectors are verified reliable on live DeepSeek/Perplexity pages (see `CLAUDE.md` § 4, marked "provisional" / "needs live DOM verification"), re-add both matches to `manifest.json` and add a "beta" mention to the store listing (`What it does` + `What's new`) in the same release — don't ship the matches without the listing disclosure next time either.
+**Files:** `manifest.json`, `content.js`.
+
 ---
 
 ## Future Feature Ideas

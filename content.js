@@ -174,8 +174,21 @@
   let _shouldReopenPanel = false;
   let _panelOpenedOnPath = null;
 
+  // https://*/* is an optional permission (not auto-granted) — only requested here,
+  // lazily, the first time a capture actually needs the cross-origin fetch fallback.
+  // MUST be called from content.js (a user-gesture context), never from the background
+  // service worker, where chrome.permissions.request() silently fails.
+  async function _ensureImageFetchPermission() {
+    try {
+      const has = await new Promise(resolve => chrome.permissions.contains({ origins: ['https://*/*'] }, resolve));
+      if (has) return true;
+      return await new Promise(resolve => chrome.permissions.request({ origins: ['https://*/*'] }, resolve));
+    } catch (_) { return false; }
+  }
+
   async function _captureImages() {
     const map = {};
+    let permissionChecked = false;
     for (const { idx, el, alt } of _imgCaptures) {
       // Strategy 1: canvas (works if same-origin or CORS-permissive)
       if (el && el.naturalWidth && el.naturalHeight) {
@@ -191,9 +204,14 @@
         } catch (_) { /* tainted canvas — try fetch */ }
       }
       // Strategy 2: background worker fetch → OffscreenCanvas → PNG
-      // Works for AI platform CDNs listed in host_permissions (oaiusercontent.com, googleusercontent.com)
+      // Works for AI platform CDNs listed in host_permissions, plus anything covered
+      // by the optional https://*/* grant requested just below on first use.
       const src = _getImageSrc(el);
       if (!src || src.startsWith('data:') || src.startsWith('blob:')) continue;
+      if (!permissionChecked) {
+        permissionChecked = true;
+        await _ensureImageFetchPermission();
+      }
       try {
         const result = await new Promise(resolve => {
           chrome.runtime.sendMessage({ action: 'fetchImage', url: src }, resp => {
@@ -228,6 +246,17 @@
         if (tex) {
           const isDisplay = node.classList.contains('math-block');
           return isDisplay ? `\n$$${tex}$$\n` : `$${tex}$`;
+        }
+      }
+
+      // Strategy 0b: ChatGPT 2025+ format — role="math" wrapper stores TeX source in
+      // data-math-source or aria-label (ChatGPT dropped <annotation> tags entirely).
+      // Intercept here so child .katex-display/.katex-html nodes aren't processed separately.
+      if (node.getAttribute && node.getAttribute('role') === 'math') {
+        const src = node.getAttribute('data-math-source') || node.getAttribute('aria-label');
+        if (src) {
+          const isDisplay = !!node.querySelector('.katex-display');
+          return isDisplay ? `\n$$${normalizeTeX(src.trim())}$$\n` : `$${normalizeTeX(src.trim())}$`;
         }
       }
 
@@ -289,6 +318,35 @@
       // === STANDARD HTML ELEMENTS ===
 
       if (/^h[1-6]$/.test(tag)) return `\n${'#'.repeat(parseInt(tag[1]))} ${getInner(node)}\n`;
+      // ChatGPT 2025+: when KaTeX fails or data-math-source is empty, display math
+      // appears as <p dir="auto"> containing raw TeX + <br> + literal "]". Detect this
+      // pattern and wrap properly; the matching span[role="math"] may be in this same
+      // paragraph or in the immediately preceding sibling element.
+      if (tag === 'p' && node.getAttribute('dir') === 'auto') {
+        const kids = Array.from(node.childNodes);
+        const lastKid = kids[kids.length - 1];
+        const secondLast = kids[kids.length - 2];
+        if (
+          lastKid && lastKid.nodeType === Node.TEXT_NODE && lastKid.textContent.trim() === ']' &&
+          secondLast && secondLast.tagName === 'BR'
+        ) {
+          const mathSpan = node.querySelector('span[role="math"]') ||
+            (node.previousElementSibling && node.previousElementSibling.querySelector &&
+             node.previousElementSibling.querySelector('span[role="math"]'));
+          if (mathSpan) {
+            let rawTex = '';
+            for (const kid of kids) {
+              if (kid === secondLast || kid === lastKid) break;
+              if (kid.nodeType === Node.TEXT_NODE) rawTex += kid.textContent;
+            }
+            rawTex = rawTex.trim();
+            if (rawTex) {
+              const isDisplay = !!mathSpan.querySelector('.katex-display');
+              return isDisplay ? `\n$$${normalizeTeX(rawTex)}$$\n` : `$${normalizeTeX(rawTex)}$`;
+            }
+          }
+        }
+      }
       if (tag === 'p') return `\n${getInner(node)}\n`;
       if (tag === 'ol') { let r = '\n', n = 1; for (const li of node.querySelectorAll(':scope > li')) { r += `${n}. ${getInner(li).replace(/\n+/g, ' ').trim()}\n`; n++; } return r; }
       if (tag === 'ul') { let r = '\n'; for (const li of node.querySelectorAll(':scope > li')) r += `- ${getInner(li).replace(/\n+/g, ' ').trim()}\n`; return r; }
@@ -337,13 +395,21 @@
     // Try data-math attribute (Gemini)
     const dataMath = el.getAttribute('data-math');
     if (dataMath) return normalizeTeX(dataMath.trim());
-    // Try annotation element (ChatGPT KaTeX)
+    // Try annotation element (KaTeX legacy — pre-2025 ChatGPT)
     const ann = el.querySelector('annotation[encoding="application/x-tex"]');
     if (ann) return normalizeTeX(ann.textContent.trim());
     // Try MathJax script
     const script = el.querySelector('script[type="math/tex"], script[type="math/tex; mode=display"]');
     if (script) return normalizeTeX(script.textContent.trim());
-    // Try other data attributes
+    // ChatGPT 2025+: TeX stored on role="math" ancestor (data-math-source or aria-label)
+    const mathWrapper = (el.getAttribute && el.getAttribute('role') === 'math')
+      ? el
+      : (el.closest ? el.closest('[role="math"]') : null);
+    if (mathWrapper) {
+      const src = mathWrapper.getAttribute('data-math-source') || mathWrapper.getAttribute('aria-label');
+      if (src) return normalizeTeX(src.trim());
+    }
+    // Try other data attributes on the element itself
     const formula = el.getAttribute('data-formula') || el.getAttribute('aria-label');
     if (formula) return normalizeTeX(formula.trim());
     return '';
@@ -712,7 +778,15 @@
         if (vault) params.set('vault', vault);
         params.set('file', safeFile);
         params.set('content', fullContent);
-        window.open('obsidian://new?' + params.toString(), '_blank');
+        // Use <a> click instead of window.open — Chrome extension sandboxing blocks
+        // custom protocol URIs opened via window.open, resulting in about:blank tabs.
+        const obsA = document.createElement('a');
+        // URLSearchParams encodes spaces as + but Obsidian URI only handles %20
+        obsA.href = 'obsidian://new?' + params.toString().replace(/\+/g, '%20');
+        obsA.style.display = 'none';
+        document.body.appendChild(obsA);
+        obsA.click();
+        setTimeout(() => obsA.remove(), 100);
         showToast('✅ Sent to Obsidian! Check the app.', false, 4000);
       } catch (e) {
         showToast('❌ Obsidian export failed: ' + e.message, true);
@@ -1064,7 +1138,8 @@
     // sibling subtree. If still nothing, return the closest substantial-text ancestor.
     const out = [];
     document.querySelectorAll('button[aria-label="Copy"]').forEach(btn => {
-      if (btn.closest('pre') || btn.closest('[data-code-block]') || btn.closest('.code-block')) return;
+      if (btn.closest('pre') || btn.closest('[data-code-block]') || btn.closest('.code-block') ||
+          btn.closest('[class*="code-block"]') || btn.closest('[class*="codeblock"]')) return;
       let p = btn.parentElement;
       for (let i = 0; i < 12 && p && p !== document.body; i++, p = p.parentElement) {
         const md = p.querySelector('.standard-markdown, [class*="markdown"]');
@@ -1607,13 +1682,43 @@
     const messages = document.querySelectorAll('[data-message-author-role="assistant"]');
     for (const msg of messages) {
       const container = msg.closest('.group\\/conversation-turn') || msg.closest('[data-testid^="conversation-turn"]');
-      if (!container || container.querySelector('.' + BUTTON_CLASS)) continue;
+      if (!container) continue;
       const actionArea = findChatGPTActionBar(container);
-      if (!actionArea) continue;
-
+      // "Reliable" = the real per-message action bar (has more/thumbs/copy button),
+      // as opposed to a generic div.flex fallback match that could be anything.
+      const reliable = !!(actionArea && (
+        actionArea.querySelector('button[data-testid*="more"]') ||
+        actionArea.querySelector('button[data-testid*="thumbs"]') ||
+        actionArea.querySelector('button[data-testid*="copy"]')
+      ));
+      const existingBtn = container.querySelector('.' + BUTTON_CLASS);
+      if (existingBtn) {
+        // Button was placed provisionally while the response was still generating
+        // (no real action bar existed yet). Now that one has rendered, relocate it —
+        // otherwise it stays stuck in the wrong spot until the page is reloaded.
+        if (existingBtn.dataset.cgdFallback === '1' && reliable) {
+          const oldWrapper = existingBtn.closest('.cgd-fallback-wrapper');
+          insertBeforeMoreButton(actionArea, existingBtn);
+          delete existingBtn.dataset.cgdFallback;
+          if (oldWrapper) oldWrapper.remove();
+        }
+        continue;
+      }
+      const contentEl = msg.querySelector('.markdown') || msg.querySelector('[class*="markdown"]') || msg.querySelector('article') || msg;
       const btn = createExportButton();
-      btn.addEventListener('click', (e) => handleExportClick(e, msg.querySelector('.markdown') || msg.querySelector('[class*="markdown"]') || msg.querySelector('article') || msg));
-      insertBeforeMoreButton(actionArea, btn);
+      btn.addEventListener('click', (e) => handleExportClick(e, contentEl));
+      if (actionArea && reliable) {
+        insertBeforeMoreButton(actionArea, btn);
+      } else {
+        // No reliable action bar yet (short response, or still generating) — inject
+        // provisionally after response content; relocated once the real bar appears.
+        btn.dataset.cgdFallback = '1';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'cgd-fallback-wrapper';
+        wrapper.style.cssText = 'display:flex;justify-content:flex-end;padding:2px 0;';
+        wrapper.appendChild(btn);
+        contentEl.appendChild(wrapper);
+      }
     }
 
     // Second pass: DALL-E / image-gen turns (no data-message-author-role="assistant" child)
@@ -1646,9 +1751,29 @@
   }
 
   function findChatGPTActionBar(container) {
-    // Primary: semantic action bar div — locale-independent, present on text AND image responses
+    // Primary: copy action button is the most specific ChatGPT action-bar indicator.
+    // Walk up until we find the bar that also has the "more" button (three dots).
+    const copyBtn = container.querySelector('button[data-testid="copy-turn-action-button"]');
+    if (copyBtn) {
+      let bar = copyBtn.parentElement;
+      for (let i = 0; i < 4 && bar; i++) {
+        if (bar.querySelector('button[data-testid*="more"]')) return bar;
+        bar = bar.parentElement;
+      }
+      return copyBtn.parentElement;
+    }
+
+    // Secondary: role="group" with aria-label — but only if it contains thumbs/copy buttons
+    // (avoids matching code-block toolbars or other groups inside the content area).
     const actionGroup = container.querySelector('div[role="group"][aria-label]');
-    if (actionGroup && actionGroup.querySelectorAll('button').length >= 1) return actionGroup;
+    if (actionGroup &&
+        actionGroup.querySelectorAll('button').length >= 1 &&
+        (actionGroup.querySelector('button[data-testid*="thumbs"]') ||
+         actionGroup.querySelector('button[data-testid*="copy"]') ||
+         actionGroup.querySelector('button[aria-label*="Thumb" i]') ||
+         actionGroup.querySelector('button[aria-label*="Copy" i]'))) {
+      return actionGroup;
+    }
 
     // Fallback: thumbs bar (works when role="group" is absent)
     const thumbBtn = container.querySelector(
@@ -1663,16 +1788,6 @@
         bar = bar.parentElement;
       }
       return thumbBtn.parentElement;
-    }
-    // Fallback for text responses where thumbs haven't rendered yet
-    const copyBtn = container.querySelector('button[data-testid="copy-turn-action-button"]');
-    if (copyBtn) {
-      let bar = copyBtn.parentElement;
-      for (let i = 0; i < 3 && bar; i++) {
-        if (bar.querySelector('button[data-testid*="more"]')) return bar;
-        bar = bar.parentElement;
-      }
-      return copyBtn.parentElement;
     }
     // DALL-E / image-generation card: download or regenerate button lives in the bottom bar
     const dalleBtn = container.querySelector(
@@ -1897,8 +2012,27 @@
     const copyButtons = document.querySelectorAll('button[aria-label="Copy"]');
 
     for (const copyBtn of copyButtons) {
-      // Exclude code-block copy buttons — they live inside <pre> or a code toolbar
-      if (copyBtn.closest('pre') || copyBtn.closest('[data-code-block]') || copyBtn.closest('.code-block')) continue;
+      // Exclude code-block copy buttons. Claude's code block header is a sibling of <pre>,
+      // not inside it, so we also check whether a <pre> is a direct child of the button's
+      // nearby ancestors (up to 3 hops) to catch the current Claude DOM structure.
+      let isCodeBlockCopy = !!(
+        copyBtn.closest('pre') ||
+        copyBtn.closest('[data-code-block]') ||
+        copyBtn.closest('.code-block') ||
+        copyBtn.closest('[class*="code-block"]') ||
+        copyBtn.closest('[class*="codeblock"]') ||
+        copyBtn.closest('[class*="CodeBlock"]')
+      );
+      if (!isCodeBlockCopy) {
+        let el = copyBtn.parentElement;
+        for (let j = 0; j < 3 && el; j++, el = el.parentElement) {
+          if (el.querySelector && el.querySelector(':scope > pre, :scope > code')) {
+            isCodeBlockCopy = true;
+            break;
+          }
+        }
+      }
+      if (isCodeBlockCopy) continue;
 
       // Find the message-level action bar (try multiple class names Claude has used)
       const actionBar = copyBtn.closest('.text-text-300') ||
@@ -1944,60 +2078,82 @@
   function addDeepSeekButtons() {
     const responses = _deepSeekFindResponses();
     for (const resp of responses) {
-      // Walk up to find the message-level container
+      if (resp.dataset.cgdInjected) continue;
       const container = resp.closest('[class*="message"]') ||
                         resp.closest('[class*="chat-message"]') ||
                         resp.parentElement;
       if (!container) continue;
       if (container.querySelector('.' + BUTTON_CLASS)) continue;
 
-      // Find action bar via copy button
       const copyBtn = container.querySelector(
         'button[aria-label*="copy" i], button[title*="copy" i], ' +
         'button[class*="copy"], span[class*="copy"]'
       );
-      if (!copyBtn) continue;
 
-      // Walk up to find a bar that has multiple buttons (feedback + copy)
-      let actionBar = copyBtn.parentElement;
-      for (let i = 0; i < 5 && actionBar; i++) {
-        if (actionBar.querySelectorAll('button, span[role="button"]').length >= 2) break;
-        actionBar = actionBar.parentElement;
+      let injected = false;
+      if (copyBtn) {
+        let actionBar = copyBtn.parentElement;
+        for (let i = 0; i < 5 && actionBar; i++) {
+          if (actionBar.querySelectorAll('button, span[role="button"]').length >= 2) break;
+          actionBar = actionBar.parentElement;
+        }
+        if (actionBar && !actionBar.querySelector('.' + BUTTON_CLASS)) {
+          const btn = createExportButton();
+          btn.addEventListener('click', (e) => handleExportClick(e, resp));
+          actionBar.appendChild(btn);
+          injected = true;
+        }
       }
-      if (!actionBar || actionBar.querySelector('.' + BUTTON_CLASS)) continue;
-
-      const btn = createExportButton();
-      btn.addEventListener('click', (e) => handleExportClick(e, resp));
-      actionBar.appendChild(btn);
+      if (!injected) {
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'display:flex;justify-content:flex-end;padding:4px 0;';
+        const btn = createExportButton();
+        btn.addEventListener('click', (e) => handleExportClick(e, resp));
+        wrapper.appendChild(btn);
+        resp.parentElement?.insertBefore(wrapper, resp.nextSibling);
+      }
+      resp.dataset.cgdInjected = '1';
     }
   }
 
   function addPerplexityButtons() {
     const responses = _perplexityFindResponses();
     for (const resp of responses) {
+      if (resp.dataset.cgdInjected) continue;
       const container = resp.closest('[class*="answer"], [data-testid*="answer"]') ||
                         resp.closest('[class*="response"]') ||
                         resp.parentElement;
       if (!container) continue;
       if (container.querySelector('.' + BUTTON_CLASS)) continue;
 
-      // Find action bar via copy button
       const copyBtn = container.querySelector(
         'button[aria-label*="copy" i], button[title*="copy" i], ' +
         'button[class*="copy"], [data-testid*="copy"]'
       );
-      if (!copyBtn) continue;
 
-      let actionBar = copyBtn.parentElement;
-      for (let i = 0; i < 5 && actionBar; i++) {
-        if (actionBar.querySelectorAll('button, [role="button"]').length >= 2) break;
-        actionBar = actionBar.parentElement;
+      let injected = false;
+      if (copyBtn) {
+        let actionBar = copyBtn.parentElement;
+        for (let i = 0; i < 5 && actionBar; i++) {
+          if (actionBar.querySelectorAll('button, [role="button"]').length >= 2) break;
+          actionBar = actionBar.parentElement;
+        }
+        if (actionBar && !actionBar.querySelector('.' + BUTTON_CLASS)) {
+          const btn = createExportButton();
+          btn.addEventListener('click', (e) => handleExportClick(e, resp));
+          actionBar.appendChild(btn);
+          injected = true;
+        }
       }
-      if (!actionBar || actionBar.querySelector('.' + BUTTON_CLASS)) continue;
-
-      const btn = createExportButton();
-      btn.addEventListener('click', (e) => handleExportClick(e, resp));
-      actionBar.appendChild(btn);
+      if (!injected) {
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'display:flex;justify-content:flex-end;padding:4px 0;';
+        const btn = createExportButton();
+        btn.addEventListener('click', (e) => handleExportClick(e, resp));
+        wrapper.appendChild(btn);
+        resp.parentElement?.insertBefore(wrapper, resp.nextSibling);
+      }
+      resp.dataset.cgdInjected = '1';
     }
   }
 

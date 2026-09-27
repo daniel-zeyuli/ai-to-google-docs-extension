@@ -1,6 +1,6 @@
 {
-  "appName":         { "message": "ChatGPT to Google Docs: Export Gemini, Claude (Math, Code)" },
-  "appDescription":  { "message": "Save ChatGPT, Gemini & Claude chats as Google Docs in one click. Math, code, and images stay perfectly formatted." },
+  "appName":         { "message": "Export ChatGPT, Gemini & Claude to Docs, Notion & Obsidian (Math, Code)" },
+  "appDescription":  { "message": "Save ChatGPT, Gemini & Claude chats to Google Docs, Notion & Obsidian in one click. Math, code & images stay perfectly formatted." },
   "popupTitle":      { "message": "AI Chat Exporter" },
   "popupSubtitle":   { "message": "for Google Docs" },
   "saveTo":          { "message": "Save to" },

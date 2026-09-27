@@ -565,6 +565,21 @@ function markdownToNotionBlocks(markdown) {
   while (i < lines.length) {
     const line = lines[i];
 
+    // Display math block ($$...$$) — single-line or multi-line
+    if (line.startsWith('$$')) {
+      if (line.endsWith('$$') && line.length > 4) {
+        blocks.push({ type: 'equation', equation: { expression: line.slice(2, -2).trim() } });
+        i++;
+        continue;
+      }
+      const mathLines = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith('$$')) { mathLines.push(lines[i]); i++; }
+      blocks.push({ type: 'equation', equation: { expression: mathLines.join('\n').trim() } });
+      i++;
+      continue;
+    }
+
     // Fenced code block
     if (line.startsWith('```')) {
       const lang = line.slice(3).trim().toLowerCase() || 'plain text';
@@ -655,14 +670,17 @@ function _notionCodeLang(lang) {
 function _notionRichText(text) {
   if (!text) return [{ type: 'text', text: { content: '' } }];
   const parts = [];
-  // Matches ***bold-italic***, **bold**, *italic*, `code`, ~~strikethrough~~
-  const regex = /(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*(?!\*|\s)[\s\S]+?(?<!\s|\*)\*(?!\*)|`[^`\n]+`|~~[^~]+~~)/g;
+  // Matches: display math $$...$$, inline math $...$, ***bold-italic***, **bold**,
+  // *italic*, `code`, ~~strikethrough~~
+  const regex = /(\$\$[^$]+\$\$|\$(?!\$)[^$\n]+\$(?!\$)|\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*(?!\*|\s)[\s\S]+?(?<!\s|\*)\*(?!\*)|`[^`\n]+`|~~[^~]+~~)/g;
   let lastIdx = 0;
   let m;
   while ((m = regex.exec(text)) !== null) {
     if (m.index > lastIdx) parts.push(_notionTextPart(text.slice(lastIdx, m.index), {}));
     const raw = m[0];
-    if (raw.startsWith('***'))       parts.push(_notionTextPart(raw.slice(3,-3), { bold: true, italic: true }));
+    if (raw.startsWith('$$'))        parts.push({ type: 'equation', equation: { expression: raw.slice(2, -2).trim() } });
+    else if (raw.startsWith('$'))    parts.push({ type: 'equation', equation: { expression: raw.slice(1, -1).trim() } });
+    else if (raw.startsWith('***'))  parts.push(_notionTextPart(raw.slice(3,-3), { bold: true, italic: true }));
     else if (raw.startsWith('**'))   parts.push(_notionTextPart(raw.slice(2,-2), { bold: true }));
     else if (raw.startsWith('~~'))   parts.push(_notionTextPart(raw.slice(2,-2), { strikethrough: true }));
     else if (raw.startsWith('`'))    parts.push(_notionTextPart(raw.slice(1,-1), { code: true }));
@@ -670,7 +688,7 @@ function _notionRichText(text) {
     lastIdx = m.index + raw.length;
   }
   if (lastIdx < text.length) parts.push(_notionTextPart(text.slice(lastIdx), {}));
-  return parts.filter(p => p.text.content);
+  return parts.filter(p => p.text?.content || p.equation?.expression);
 }
 
 function _notionTextPart(content, annotations) {

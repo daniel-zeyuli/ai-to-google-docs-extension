@@ -215,7 +215,8 @@ styles.css — leaf. Consumed by content.js and popup.html (popup uses inline).
 | `permissions: downloads`                       | Local `.docx` save                                     | `background.js` (`downloadLocal` action)               |
 | `host_permissions: googleapis.com/*`          | Drive multipart upload, files.list, Docs batchUpdate   | `background.js` (every API call)                        |
 | `host_permissions: docs.googleapis.com/*`     | Docs API append (separate origin)                      | `background.js` (`appendContent`)                       |
-| `optional_host_permissions: <all_urls>`       | Image fetch fallback (CORS bypass via background)      | `background.js` (`fetchImageAsBase64`)                  |
+| `optional_host_permissions: <all_urls>`       | Image fetch fallback (CORS bypass via background)      | requested in `content.js` (`_ensureImageFetchPermission`, must run in a user-gesture context — never in the service worker), fetch itself done by `background.js` (`fetchImageAsBase64`) |
+| `host_permissions: api.notion.com/*`          | Notion export (create page, append blocks)              | `background.js` (`fetch` calls in Notion export path)   |
 | `oauth2.client_id`                             | Identifies extension to Google's OAuth                 | implicit (used by `chrome.identity`)                    |
 | `oauth2.scopes: drive.file`                    | Upload + list + append files this extension created    | every Drive/Docs call                                   |
 | `commands.trigger-export`                      | Cmd/Ctrl+Shift+E global shortcut                       | `background.js` `chrome.commands.onCommand`             |
