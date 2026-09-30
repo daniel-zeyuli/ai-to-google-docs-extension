@@ -457,7 +457,11 @@
                      messageEl.querySelector('[class*="markdown"]') ||
                      messageEl;
       } else if (isDeepSeek) {
-        contentDiv = messageEl.querySelector('.ds-markdown') ||
+        // Response finders pass the `.ds-markdown` root itself. Prefer that
+        // node over a nested paragraph like `.ds-markdown-paragraph`, which
+        // can contain only the response's opening sentence.
+        contentDiv = (messageEl.matches && messageEl.matches('.ds-markdown') ? messageEl : null) ||
+                     messageEl.querySelector('.ds-markdown') ||
                      messageEl.querySelector('[class*="markdown"]') ||
                      messageEl;
       } else if (isPerplexity) {
@@ -1248,7 +1252,7 @@
       const startX = e.clientX, startY = e.clientY;
       const rect = panel.getBoundingClientRect();
       const origLeft = rect.left, origTop = rect.top;
-      document.removeEventListener('click', outsideClickHandler);
+      document.removeEventListener('click', outsideClickHandler, true);
       function onMove(me) {
         panel.style.left = (origLeft + me.clientX - startX) + 'px';
         panel.style.top  = (origTop  + me.clientY - startY) + 'px';
@@ -1258,7 +1262,7 @@
       function onUp() {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
-        setTimeout(() => document.addEventListener('click', outsideClickHandler), 0);
+        setTimeout(() => document.addEventListener('click', outsideClickHandler, true), 0);
       }
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
@@ -1595,10 +1599,14 @@
     // ── Shared logic ──
     function close() {
       darkWatcher.disconnect();
-      document.removeEventListener('click', outsideClickHandler);
+      document.removeEventListener('click', outsideClickHandler, true);
       panel.remove();
     }
 
+    // Capture phase (not bubble) — some host pages (e.g. DeepSeek's React app)
+    // call stopPropagation() on their own click handlers during the bubble
+    // phase, which would otherwise prevent this document-level listener from
+    // ever firing and leave the panel stuck open.
     function outsideClickHandler(e) {
       if (!document.body.contains(e.target)) return;
       if (!panel.contains(e.target)) close();
@@ -1670,7 +1678,7 @@
     document.body.appendChild(panel);
     setTimeout(() => {
       if (thisIdx !== -1 && rowEls[thisIdx]) rowEls[thisIdx].scrollIntoView({ block: 'nearest' });
-      document.addEventListener('click', outsideClickHandler);
+      document.addEventListener('click', outsideClickHandler, true);
     }, 0);
   }
 
@@ -2075,85 +2083,129 @@
   //  DEEPSEEK: INJECT BUTTONS
   // ═══════════════════════════════════════════════════════════════
 
+  // Wrapped defensively: an uncaught error here must never propagate up into
+  // addDeepSeekButtons/addPerplexityButtons' per-response loop — that would
+  // abort processing for every remaining response in that pass (not just this
+  // one), which looked like "the newest response's button never appears while
+  // an older one still has its button" (only the responses processed before
+  // the throw kept theirs).
+  function _findCopyActionBar(container, response) {
+    try {
+      return _findCopyActionBarImpl(container, response);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function _findCopyActionBarImpl(container, response) {
+    const copyBtn = Array.from(container.querySelectorAll(
+      'button[aria-label*="copy" i], button[title*="copy" i], ' +
+      'button[class*="copy"], span[class*="copy"], [data-testid*="copy"]'
+    )).find(btn => !btn.closest('pre, [data-code-block], [class*="code-block"], [class*="codeblock"]'));
+    if (copyBtn) {
+      let bar = copyBtn.parentElement;
+      for (let i = 0; i < 5 && bar; i++) {
+        if (bar.querySelectorAll('button, [role="button"]').length >= 2) return bar;
+        bar = bar.parentElement;
+      }
+      return copyBtn.parentElement;
+    }
+
+    if (!response) return null;
+    const responseSelector = isPerplexity ? '.prose' : '.ds-markdown';
+    let responseScope = response.parentElement;
+    while (responseScope && responseScope !== document.body) {
+      const responseNodes = responseScope.querySelectorAll(responseSelector);
+      const topLevelResponses = Array.from(responseNodes).filter(node =>
+        !node.parentElement?.closest(responseSelector));
+      if (topLevelResponses.length === 1 && topLevelResponses[0] === response) break;
+      responseScope = responseScope.parentElement;
+    }
+    if (!responseScope || responseScope === document.body) return null;
+
+    const iconButtons = Array.from(responseScope.querySelectorAll('button:has(svg)'))
+      .filter(btn => !btn.textContent.trim());
+    const spriteShareButton = isPerplexity
+      ? iconButtons.find(btn => Array.from(btn.querySelectorAll('svg use')).some(use =>
+          (use.getAttribute('href') || use.getAttributeNS('http://www.w3.org/1999/xlink', 'href')) === '#pplx-icon-upload'))
+      : null;
+    const candidates = spriteShareButton ? [spriteShareButton] : iconButtons;
+
+    for (const button of candidates) {
+      let bar = button.parentElement;
+      for (let i = 0; i < 5 && bar; i++, bar = bar.parentElement) {
+        const iconButtonCount = Array.from(bar.querySelectorAll('button:has(svg), [role="button"]:has(svg)'))
+          .filter(btn => !btn.textContent.trim()).length;
+        if (iconButtonCount < 2) continue;
+
+        // The icon group may be a sibling of the prose node, but stays inside
+        // the nearest ancestor that contains only this response.
+        if (responseScope.contains(bar)) return bar;
+      }
+    }
+    return null;
+  }
+
+  // BUG-031: a boolean flag (`resp.dataset.cgdInjected`) only records "we placed
+  // a button once" — it says nothing about whether that button is still in the
+  // DOM. On React-driven pages (DeepSeek, Perplexity), the host app can
+  // reconcile a response's parent at any later point (e.g. a citation count or
+  // related-content section finishing async) and discard child nodes it didn't
+  // create — including our manually-inserted button — while reusing/keeping the
+  // response node itself, so the flag survives even after the button is gone.
+  // Track the actual button element per response instead, and re-check with
+  // document.body.contains() every pass so a silently-removed button gets
+  // recreated rather than trusted forever.
+  const _platformButtonMap = new WeakMap(); // response element -> button element
+
+  function _addPlatformButton(resp, container) {
+    const actionBar = _findCopyActionBar(container, resp);
+    const trackedBtn = _platformButtonMap.get(resp);
+    if (trackedBtn && document.body.contains(trackedBtn)) {
+      // Relocate a provisionally-placed button once the real copy action bar
+      // (not present until generation finishes) has rendered — see BUG-024.
+      if (trackedBtn.dataset.cgdFallback === '1' && actionBar) {
+        const oldWrapper = trackedBtn.closest('.cgd-fallback-wrapper');
+        actionBar.appendChild(trackedBtn);
+        delete trackedBtn.dataset.cgdFallback;
+        if (oldWrapper) oldWrapper.remove();
+      }
+      return;
+    }
+    const btn = createExportButton();
+    btn.addEventListener('click', (e) => handleExportClick(e, resp));
+    if (actionBar) {
+      actionBar.appendChild(btn);
+    } else {
+      btn.dataset.cgdFallback = '1';
+      const wrapper = document.createElement('div');
+      wrapper.className = 'cgd-fallback-wrapper';
+      wrapper.style.cssText = 'display:flex;justify-content:flex-end;padding:4px 0;';
+      wrapper.appendChild(btn);
+      resp.parentElement?.insertBefore(wrapper, resp.nextSibling);
+    }
+    _platformButtonMap.set(resp, btn);
+  }
+
   function addDeepSeekButtons() {
     const responses = _deepSeekFindResponses();
     for (const resp of responses) {
-      if (resp.dataset.cgdInjected) continue;
       const container = resp.closest('[class*="message"]') ||
                         resp.closest('[class*="chat-message"]') ||
                         resp.parentElement;
       if (!container) continue;
-      if (container.querySelector('.' + BUTTON_CLASS)) continue;
-
-      const copyBtn = container.querySelector(
-        'button[aria-label*="copy" i], button[title*="copy" i], ' +
-        'button[class*="copy"], span[class*="copy"]'
-      );
-
-      let injected = false;
-      if (copyBtn) {
-        let actionBar = copyBtn.parentElement;
-        for (let i = 0; i < 5 && actionBar; i++) {
-          if (actionBar.querySelectorAll('button, span[role="button"]').length >= 2) break;
-          actionBar = actionBar.parentElement;
-        }
-        if (actionBar && !actionBar.querySelector('.' + BUTTON_CLASS)) {
-          const btn = createExportButton();
-          btn.addEventListener('click', (e) => handleExportClick(e, resp));
-          actionBar.appendChild(btn);
-          injected = true;
-        }
-      }
-      if (!injected) {
-        const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'display:flex;justify-content:flex-end;padding:4px 0;';
-        const btn = createExportButton();
-        btn.addEventListener('click', (e) => handleExportClick(e, resp));
-        wrapper.appendChild(btn);
-        resp.parentElement?.insertBefore(wrapper, resp.nextSibling);
-      }
-      resp.dataset.cgdInjected = '1';
+      _addPlatformButton(resp, container);
     }
   }
 
   function addPerplexityButtons() {
     const responses = _perplexityFindResponses();
     for (const resp of responses) {
-      if (resp.dataset.cgdInjected) continue;
       const container = resp.closest('[class*="answer"], [data-testid*="answer"]') ||
                         resp.closest('[class*="response"]') ||
                         resp.parentElement;
       if (!container) continue;
-      if (container.querySelector('.' + BUTTON_CLASS)) continue;
-
-      const copyBtn = container.querySelector(
-        'button[aria-label*="copy" i], button[title*="copy" i], ' +
-        'button[class*="copy"], [data-testid*="copy"]'
-      );
-
-      let injected = false;
-      if (copyBtn) {
-        let actionBar = copyBtn.parentElement;
-        for (let i = 0; i < 5 && actionBar; i++) {
-          if (actionBar.querySelectorAll('button, [role="button"]').length >= 2) break;
-          actionBar = actionBar.parentElement;
-        }
-        if (actionBar && !actionBar.querySelector('.' + BUTTON_CLASS)) {
-          const btn = createExportButton();
-          btn.addEventListener('click', (e) => handleExportClick(e, resp));
-          actionBar.appendChild(btn);
-          injected = true;
-        }
-      }
-      if (!injected) {
-        const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'display:flex;justify-content:flex-end;padding:4px 0;';
-        const btn = createExportButton();
-        btn.addEventListener('click', (e) => handleExportClick(e, resp));
-        wrapper.appendChild(btn);
-        resp.parentElement?.insertBefore(wrapper, resp.nextSibling);
-      }
-      resp.dataset.cgdInjected = '1';
+      _addPlatformButton(resp, container);
     }
   }
 

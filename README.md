@@ -1,20 +1,31 @@
 # AI Chat Exporter for Google Docs
 
-A Chrome extension that adds an **Export to Docs** button directly on ChatGPT, Gemini, and Claude. One click exports any AI response — with full formatting — to Google Docs, saved straight to your Google Drive.
+A Chrome extension for saving AI responses and conversations in the tools you already use. Export from ChatGPT, Gemini, Claude, DeepSeek, or Perplexity to Google Docs, Word (`.docx`), Markdown, Notion, or Obsidian.
 
 ## Supported Platforms
 
 - ChatGPT (chatgpt.com)
 - Google Gemini (gemini.google.com)
 - Claude (claude.ai)
+- DeepSeek (chat.deepseek.com)
+- Perplexity (perplexity.ai)
+
+## Export Destinations
+
+- Google Docs in Google Drive
+- Word documents (`.docx`) saved locally
+- Markdown files (`.md`) saved locally
+- Notion pages in a workspace you configure
+- Obsidian notes in a vault on your device
 
 ## Features
 
-- **One-click export** — button appears next to every AI response
+- **One-click export** — button appears alongside responses on supported chat platforms
 - **Selection panel** — choose individual responses or export the full conversation
-- **Append to existing docs** — add new content to a previously exported document, with source metadata (platform, title, date, URL)
-- **Folder picker** — choose which Google Drive folder to save to
-- **Formatting preserved** — headings, bold/italic, code blocks, tables, math equations, lists
+- **Continue Google Docs exports** — add new content to a document associated with a previous export
+- **Choose what to export** — export the latest response, the full conversation, or selected responses
+- **Formatting support** — headings, bold/italic, code blocks, tables, math equations, and lists, depending on the destination
+- **Source details** — Google Docs exports include platform and conversation citation metadata
 - **CSV export** — download any table in a response as a `.csv` file
 - **Keyboard shortcut** — `Cmd+Shift+E` / `Ctrl+Shift+E`
 - **Dark mode** support
@@ -36,12 +47,13 @@ A Chrome extension that adds an **Export to Docs** button directly on ChatGPT, G
 
 - JavaScript (Manifest V3)
 - Chrome Extension APIs: `identity`, `storage`, `commands`
-- Google Drive API v3 / Google Docs API v1
+- Google Drive API v3 / Google Docs API v1 / Notion API
+- Obsidian URI integration
 - Office Open XML (OOXML) for `.docx` generation
 
 ## Privacy
 
-This extension processes all data locally in your browser. No data is sent to any developer-owned server. See the full [Privacy Policy](https://daniel-zeyuli.github.io/ai-to-google-docs-extension/privacy.html).
+Conversation content is prepared in your browser and sent only to the export destination you choose. The extension has no developer-owned backend. See the [Privacy Policy](https://daniel-zeyuli.github.io/ai-to-google-docs-extension/privacy.html) for details, including Google Drive and Notion exports.
 
 ## Author
 

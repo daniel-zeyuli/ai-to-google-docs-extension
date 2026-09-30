@@ -320,6 +320,79 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 
 ---
 
+### BUG-026: DeepSeek/Perplexity export button lands bottom-right, not aligned with the native action bar
+**Date:** 2026-09-27
+**Symptom:** During re-verification of DeepSeek/Perplexity (pulled from the v4.3 release for instability — see PLATFORM-001), the export button consistently appeared at the bottom-right of the response content instead of next to the native copy/action buttons.
+**Root cause:** Same class of bug as BUG-024, never ported to these two platforms. `addDeepSeekButtons`/`addPerplexityButtons` only looked for a copy button once per pass; during generation, no copy button exists yet (only appears once the response finishes), so the button was placed in a permanent fallback wrapper appended after the response content. Once the real copy/action bar rendered post-generation, nothing re-evaluated placement — the button-presence check (`container.querySelector('.' + BUTTON_CLASS)`) short-circuited all future passes, same as BUG-024's `container.querySelector` skip-check.
+**Fix:** Extracted the copy-button walk-up into a shared `_findCopyActionBar(container)` helper. Both `addDeepSeekButtons` and `addPerplexityButtons` now tag fallback-placed buttons with `dataset.cgdFallback = '1'` wrapped in `.cgd-fallback-wrapper`, and relocate them into the real action bar once one renders — identical pattern to BUG-024's ChatGPT fix. Removed the now-redundant `resp.dataset.cgdInjected` flag; button presence in `container` is the single source of truth for "already handled."
+**Lesson:** A fix for one platform's "provisional placement never gets corrected" bug does not automatically apply to structurally-similar platforms — each one needs the fix ported explicitly. When multiple platforms share near-identical button-injection code (as DeepSeek/Perplexity did, nearly copy-pasted), a bug found in one is very likely already present in the others; check all copies, not just the one that was reported.
+**Related files:** `content.js` (`addDeepSeekButtons`, `addPerplexityButtons`, `_findCopyActionBar`).
+
+**Note:** A related but separate symptom was also found during this same testing round — DeepSeek/Perplexity exports of long, citation-heavy responses sometimes produce content that doesn't match either the main answer or expected follow-up (e.g. a Perplexity export whose title matched the main answer but whose body was a single citation-card sentence). Root cause not yet confirmed — under investigation, not fixed by BUG-026. If reproduced again, capture the exported output alongside a live DOM snapshot of the response (including any inline citation cards) before diagnosing further.
+
+---
+
+### BUG-027: BUG-026's fix caused infinite duplicate export buttons to stack up on DeepSeek
+**Date:** 2026-09-27
+**Symptom:** Immediately after shipping BUG-026's fix, DeepSeek started piling up many export buttons in the same corner of a response instead of just one.
+**Root cause:** Self-inflicted regression. The BUG-026 rewrite replaced the original dedup check (`resp.dataset.cgdInjected`, set directly on the response node) with `container.querySelector('.' + BUTTON_CLASS)`. But `container = resp.closest('[class*="message"]') || ...` uses `closest()`, which returns `resp` itself if `resp`'s own class list happens to match `[class*="message"]`. When `container === resp`, the fallback-placed button — inserted as `resp.parentElement.insertBefore(wrapper, resp.nextSibling)`, i.e. a **sibling** of resp — sits outside `container`, so `container.querySelector` could never find it. Every ~200ms MutationObserver pass then saw "no button yet" and added another one.
+**Fix:** Restored `resp.dataset.cgdInjected` as the primary dedup guard (set on the response node itself, immune to the container-vs-sibling mismatch), while keeping BUG-026's relocation behavior by searching `resp.parentElement.querySelector(...)` instead of `container.querySelector(...)` — `resp.parentElement` covers both placements (inside container as a descendant, or as container's/resp's sibling in the fallback wrapper) regardless of whether `container === resp`.
+**Lesson:** A flag set directly on the node you're iterating (`resp.dataset.x`) is more robust against selector/topology surprises than a query scoped to a computed ancestor (`container.querySelector`) — the ancestor computation itself can silently collapse to the node you started from. Don't remove an existing dedup flag as "redundant" without checking whether the replacement check can actually see everywhere the flag's effects could land.
+**Related files:** `content.js` (`addDeepSeekButtons`, `addPerplexityButtons`).
+
+---
+
+### BUG-028: DeepSeek/Perplexity localized or out-of-scope action bars are not detected
+**Date:** 2026-09-27
+**Symptom:** The export button falls back below the response instead of joining the native action bar on DeepSeek or Perplexity.
+**Root cause:** `_findCopyActionBar` only recognized English `copy` labels within a narrowly selected response container. Perplexity localizes the Share button label (confirmed as `分享`) and its toolbar can live outside that container.
+**Fix:** Keep the existing localized-independent copy-label path when available. Otherwise, inspect icon-only SVG buttons within the nearest ancestor that contains just the current response; on Perplexity, prefer the confirmed `#pplx-icon-upload` share icon, then find its surrounding icon-button group. This avoids pairing responses and toolbars by document order. DeepSeek toolbar discovery remains mutation-driven; a toolbar only created after real hover is moved into when it appears.
+**Verification:** PARTIALLY VERIFIED. Live testing confirmed the button reliably appears (BUG-030/031's fixes on top of this), consistently landing on the right side of the response area on both platforms — but not pixel-aligned with the native action bar itself. Maintainer has accepted this as good enough; do not spend further effort on exact alignment unless it becomes hard to find or obstructs content (see project roadmap).
+**Related files:** `content.js` (`_findCopyActionBar`, `addDeepSeekButtons`, `addPerplexityButtons`).
+
+---
+
+### BUG-029: Select panel doesn't close on outside click on DeepSeek
+**Date:** 2026-09-28
+**Symptom:** On DeepSeek, clicking outside the export selection panel (`showSelectPanel`) does not close it. The identical panel closes correctly on ChatGPT/Gemini/Claude/Perplexity.
+**Root cause:** Unconfirmed with certainty (no live DOM access this session), but the panel's `outsideClickHandler` was attached to `document` in the default bubble phase. DeepSeek's own React click handlers plausibly call `stopPropagation()` during the bubble phase for elements the user clicks, which would prevent the event from ever reaching our `document`-level listener — a platform-specific host page interfering with a listener that works fine everywhere else.
+**Fix:** Attach/detach `outsideClickHandler` in the capture phase (`{capture: true}` / `true` third arg) instead of the default bubble phase, at all four call sites (initial attach, drag-temporary-detach, drag-reattach, close-detach). Capture-phase listeners fire before the target's own handlers run, so a page calling `stopPropagation()` during bubble can no longer suppress it.
+**Verification:** VERIFIED live by the maintainer on DeepSeek (including after dragging the panel by its title bar), plus a ChatGPT regression spot-check (shared panel code) confirming panel open/inside-click/outside-close all still work correctly there.
+**Related files:** `content.js` (`showSelectPanel`'s `outsideClickHandler`).
+
+---
+
+### BUG-030: `_findCopyActionBar` could throw and silently kill button placement for later responses in the same pass
+**Date:** 2026-09-28
+**Symptom:** On Perplexity, the newest conversation turn had no export button at all, while the previous turn's button was still present and correctly placed.
+**Root cause:** `_findCopyActionBar` (added in BUG-028's fix) had no internal error handling. `addDeepSeekButtons`/`addPerplexityButtons` call it inside a `for...of` loop over all responses with no surrounding try/catch; an uncaught exception for any one response would abort the entire loop for that pass, leaving that response (and any others after it in iteration order) without a button. Responses already handled in an earlier, successful pass keep their buttons, producing exactly the observed "newest missing, previous one fine" pattern. Exact throw condition unconfirmed (no live repro captured), but plausible given `_findCopyActionBar`'s new scope-widening logic hadn't been exercised against a real newest-turn DOM state.
+**Fix:** Wrapped the implementation in `_findCopyActionBarImpl` and made `_findCopyActionBar` a thin try/catch shim that returns `null` on any internal error, guaranteeing the caller always falls back to fallback-wrapper placement instead of getting no button at all.
+**Lesson:** Any per-item loop that injects UI into third-party pages needs a failure mode of "this one item degrades to its fallback," never "this exception kills every remaining item in the batch." A helper called from inside such a loop must not be allowed to throw past its own boundary.
+**Related files:** `content.js` (`_findCopyActionBar`, `_findCopyActionBarImpl`, `addDeepSeekButtons`, `addPerplexityButtons`).
+
+---
+
+### BUG-031: Perplexity's newest response still has no export button after BUG-030
+**Date:** 2026-09-28
+**Symptom:** In a conversation with more than three responses, older Perplexity responses have export buttons, but the newest response does not. Buttons that are present can export successfully.
+**Root cause:** Confirmed via live diagnostic. `_perplexityFindResponses()` correctly returned the newest response, and its `resp.dataset.cgdInjected` flag was already `'1'` — meaning `addPerplexityButtons` had already run for it and placed a button — but no button existed in the DOM near it anymore. `cgdInjected` is a one-time boolean: once set, every later pass trusted it and skipped re-checking whether the button was still there. On React-driven pages, the response's parent can be reconciled again after the button was inserted (e.g. a citation count or related-content section finishing asynchronously after the visible text looks done), and React discards DOM children it doesn't recognize — including our manually-inserted button — while reusing the response node itself, so the flag survived but the button didn't. Newer turns are more likely to still receive such follow-up re-renders than older, "settled" ones, which is why only the newest turn showed the symptom.
+**Fix:** Replaced the boolean `dataset.cgdInjected` flag with a `WeakMap` (`_platformButtonMap`) keyed by the response element, storing a direct reference to its button. Every pass now checks `document.body.contains(trackedBtn)` on that specific element instead of trusting a flag — if the button was silently removed, it's recreated instead of being assumed to still exist. `addDeepSeekButtons` and `addPerplexityButtons` now share this logic via a new `_addPlatformButton(resp, container)` helper (same underlying bug class, same fix, avoiding duplicated logic drifting apart again per the BUG-026 lesson).
+**Verification:** VERIFIED live by the maintainer — Perplexity multi-turn conversation (including the newest turn, after waiting for async content like citations to finish loading) keeps its export button; BUG-030's action-bar try/catch and this fix confirmed together.
+**Related files:** `content.js` (`_addPlatformButton`, `_platformButtonMap`, `addDeepSeekButtons`, `addPerplexityButtons`).
+
+---
+
+### BUG-032: DeepSeek single-response export contains only the introduction line
+**Date:** 2026-09-28
+**Symptom:** After generation completed, exporting a DeepSeek response from its own button produced a document whose body began “Here are some easy math equations with citations:” and contained nothing after that line.
+**Root cause:** Confirmed by the supplied live-DOM description and call path. `_deepSeekFindResponses()` returns the top-level `.ds-markdown.ds-assistant-message-main-content` element itself, but `extractMarkdown()` searched inside `messageEl` first. The broad `[class*="markdown"]` descendant match could select the first `p.ds-markdown-paragraph`, which contains only the introduction sentence; the remaining paragraphs and headings are siblings outside that selected node. The failure was in choosing the extraction root, not in KaTeX parsing.
+**Fix:** The DeepSeek branch now checks whether `messageEl` itself matches `.ds-markdown` and uses it as `contentDiv` before querying descendants. Existing `processNode()` handles KaTeX and reads TeX from its annotation; no alternate text scraper was added.
+**Current evidence:** Maintainer reproduced via the single-response button after generation ended and provided the complete answer plus the live target container classes. The code change matches that DOM shape.
+**Verification:** VERIFIED live by the maintainer — exported DeepSeek document now contains full content (headings, prose, math, citations), not just the opening line.
+**Related files:** `content.js` (`extractMarkdown`, `processNode`, DeepSeek button click handler).
+
+---
+
 ## v4.3 planned features
 
 ### High priority

@@ -33,19 +33,21 @@
         "default": "Ctrl+Shift+E",
         "mac": "Command+Shift+E"
       },
-      "description": "Export AI response to Google Docs"
+      "description": "Export an AI response or conversation"
     }
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Export ChatGPT, Gemini & Claude to Docs, Notion & Obsidian (Math, Code)"
+    "default_title": "Export AI chats from ChatGPT, Gemini, Claude, DeepSeek & Perplexity"
   },
   "content_scripts": [
     {
       "matches": [
         "https://chatgpt.com/*",
         "https://gemini.google.com/*",
-        "https://claude.ai/*"
+        "https://claude.ai/*",
+        "https://chat.deepseek.com/*",
+        "https://www.perplexity.ai/*"
       ],
       "js": [
         "converter.js",

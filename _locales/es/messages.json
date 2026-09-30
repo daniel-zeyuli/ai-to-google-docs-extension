@@ -1,8 +1,8 @@
 {
   "appName":         { "message": "Exporta ChatGPT, Gemini y Claude a Docs, Notion y Obsidian" },
-  "appDescription":  { "message": "Guarda chats de ChatGPT, Gemini y Claude en Docs, Notion y Obsidian con un clic. Fórmulas, código e imágenes quedan perfectos." },
+  "appDescription":  { "message": "Exporta chats de ChatGPT, Gemini, Claude, DeepSeek y Perplexity a Docs, Word, Markdown, Notion u Obsidian." },
   "popupTitle":      { "message": "Exportador de chats IA" },
-  "popupSubtitle":   { "message": "para Google Docs" },
+  "popupSubtitle":   { "message": "Exporta chats de IA en un clic" },
   "saveTo":          { "message": "Guardar en" },
   "driveTitle":      { "message": "Google Drive" },
   "driveDetail":     { "message": "AI Chat Exports" },

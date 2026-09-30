@@ -2,26 +2,28 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Privacy Policy - Save ChatGPT, Claude &amp; Gemini to Google Docs</title>
+<title>Privacy Policy - AI Chat Exporter</title>
 </head>
 
 <body style="max-width:800px;margin:auto;font-family:Arial;line-height:1.6;padding:20px">
 
 <h1>Privacy Policy</h1>
 
-<p><em>Last updated: May 2, 2026</em></p>
+<p><em>Last updated: September 28, 2026</em></p>
 
-<p><strong>Save ChatGPT, Claude &amp; Gemini to Google Docs</strong> respects your privacy. This policy explains what information the extension processes, why, and what we do (and don't do) with it.</p>
+<p><strong>AI Chat Exporter</strong> reads AI responses only when you choose to export them. This policy explains what information the extension processes, where it is sent, and how it is stored.</p>
 
 <h2>Information We Process</h2>
 
-<p>The extension processes the following data, all of it locally in your browser:</p>
+<p>The extension reads and prepares selected conversation content locally in your browser. Depending on the export destination you choose, that content may then be sent to that destination:</p>
 
 <ul>
-<li><strong>AI chat content</strong> — text, images, code blocks, tables, and math equations from ChatGPT, Gemini, and Claude responses that you explicitly choose to export.</li>
-<li><strong>Google account authentication</strong> — an OAuth access token issued by Google when you sign in. This token allows the extension to create and update documents in your Google Drive on your behalf. The extension requests only the <code>drive.file</code> scope, which restricts access to files the extension itself creates — it cannot read or list any other files in your Drive.</li>
-<li><strong>User preferences</strong> — your default export mode (single response, full conversation, or selection panel), preferred export destination (Google Drive, local .docx, or Markdown .md), destination folder, and a record of the last Google Doc associated with each AI conversation. Stored locally using Chrome's <code>storage</code> API.</li>
-<li><strong>Image data</strong> — when you export a response containing images, the extension fetches the image from its source URL (typically a CDN operated by the AI platform), converts it to PNG, and embeds it into the exported document. No image data is stored beyond the export operation.</li>
+<li><strong>AI chat content</strong> — text, images, code blocks, tables, and math from responses on ChatGPT, Gemini, Claude, DeepSeek, and Perplexity that you explicitly choose to export. The extension reads this content from the page and prepares the export in your browser.</li>
+<li><strong>Google account authentication</strong> — when you choose Google Drive, Chrome's identity API supplies an OAuth token used to create or update documents in your Drive. The extension requests only the <code>drive.file</code> scope, which limits API access to files created or opened by this extension.</li>
+<li><strong>Notion credentials</strong> — if you configure Notion, the integration token and parent page ID you enter are stored in Chrome's local extension storage. The token is used to authenticate the page creation request you initiate.</li>
+<li><strong>Obsidian settings</strong> — your optional vault name is stored in Chrome's local extension storage and is used when you choose to open an export in Obsidian.</li>
+<li><strong>Other preferences</strong> — your export mode, destination, and recent Google Doc references are stored locally using Chrome's <code>storage</code> API.</li>
+<li><strong>Image data</strong> — when an exported response contains images, the extension may request access to the image's source domain, fetch the image, and include it in destinations that support embedded images. Image data is processed for that export and is not stored on a developer-controlled server. The current Notion export does not upload response images.</li>
 </ul>
 
 <h2>How We Use Information</h2>
@@ -29,12 +31,13 @@
 <p>Information is used solely to provide the export functionality:</p>
 
 <ul>
-<li>Read the AI chat response you choose to export.</li>
-<li>Create a new Google Doc in your Google Drive (organized into per-platform subfolders: <em>AI Chat Exports / ChatGPT</em>, <em>/ Gemini</em>, <em>/ Claude</em>), or append content to an existing one.</li>
-<li>Alternatively, download the export as a local <code>.docx</code> or <code>.md</code> file directly to your device — no Google account required for these modes.</li>
-<li>Preserve formatting including headings, lists, tables, code blocks, math equations (rendered natively in Google Docs), and embedded images.</li>
-<li>Include an MLA-style citation header so exported documents are self-contained and citable.</li>
-<li>Remember your preferences so the extension behaves consistently between sessions.</li>
+<li>Read the response or conversation you select on ChatGPT, Gemini, Claude, DeepSeek, or Perplexity.</li>
+<li><strong>Google Drive:</strong> create a Google Doc in the extension's export folders, or append content to a document associated with a previous export.</li>
+<li><strong>Notion:</strong> send the selected export content and title to the Notion API to create a page under the parent page you configured.</li>
+<li><strong>Obsidian:</strong> pass the selected export content to the locally installed Obsidian app using its <code>obsidian://</code> link handler.</li>
+<li><strong>Local files:</strong> download a <code>.docx</code> or <code>.md</code> file to your device. These destinations do not require a Google account.</li>
+<li>Preserve supported formatting such as headings, lists, tables, code blocks, math, and images where supported by the destination. Google Docs exports include source and citation metadata.</li>
+<li>Remember your preferences and recent Google Doc references locally so the extension behaves consistently between sessions.</li>
 </ul>
 
 <h2>Permissions Explained</h2>
@@ -45,39 +48,42 @@
 <li><strong><code>identity</code></strong> — required for Google OAuth sign-in (only used when exporting to Google Drive).</li>
 <li><strong><code>storage</code></strong> — required to remember your preferences locally in your browser.</li>
 <li><strong><code>downloads</code></strong> — required to save exported files to your device when using the local .docx or Markdown .md destinations.</li>
-<li><strong>Access to <code>chatgpt.com</code>, <code>claude.ai</code>, <code>gemini.google.com</code></strong> — required to read the AI response you choose to export.</li>
+<li><strong><code>contextMenus</code></strong> — required to provide the “Export to Docs” command when you select text and open the browser context menu.</li>
+<li><strong>Access to <code>chatgpt.com</code>, <code>claude.ai</code>, <code>gemini.google.com</code>, <code>chat.deepseek.com</code>, and <code>www.perplexity.ai</code></strong> — required to add export controls and read the response you choose to export.</li>
 <li><strong>Access to <code>googleapis.com</code> and <code>docs.googleapis.com</code></strong> — required to upload documents to Google Drive and to append text to existing Google Docs (used only when Drive is the selected destination).</li>
-<li><strong>Optional access to image CDN domains</strong> — requested only at the moment you export a response containing an image. The extension needs to fetch the image from whichever CDN domain serves it (for example, OpenAI's <code>oaiusercontent.com</code> or Google's <code>googleusercontent.com</code>). This permission is requested per origin via Chrome's native permission dialog and is never requested on install. If you decline, the export continues normally and images are replaced with an <code>[Image]</code> placeholder.</li>
+<li><strong>Access to <code>api.notion.com</code></strong> — required to create a Notion page when Notion is the selected destination.</li>
+<li><strong>Optional access to image CDN domains</strong> — used to fetch images included in an export. Chrome may ask for access to the image's domain when needed. If you decline, the export continues and the image is represented by a placeholder or source reference where supported.</li>
 </ul>
 
 <h2>Data Storage &amp; Security</h2>
 
-<p>The extension does not store user data on any external server. All processing — including markdown parsing, document generation, and image conversion — happens entirely in your browser.</p>
+<p>The extension has no developer-controlled backend and does not store exported content on a developer-owned server. Content extraction and document preparation happen in your browser. When you choose a cloud destination, the export is sent directly to that provider's API (Google Drive or Notion). When you choose Obsidian, the content is handed to the locally installed app. Local file exports are downloaded to your device.</p>
 
-<p>The OAuth token issued by Google is stored locally in your browser via Chrome's secure identity API and is never transmitted to any developer-owned or third-party server. You can revoke the extension's Google access at any time by visiting <a href="https://myaccount.google.com/permissions" target="_blank">https://myaccount.google.com/permissions</a>.</p>
+<p>The Google OAuth token is managed by Chrome's identity API and used to authenticate requests to Google. It is not sent to the extension developer. You can revoke the extension's Google access at any time by visiting <a href="https://myaccount.google.com/permissions" target="_blank">Google Account permissions</a>.</p>
 
-<p>User preferences and conversation-to-document mappings are stored locally via Chrome's <code>storage</code> API and remain on your device. They are not synced to any remote server by the extension.</p>
+<p>User preferences, the optional Notion integration token, the optional Obsidian vault name, and conversation-to-document mappings are stored locally via Chrome's <code>storage</code> API. The extension does not sync them to a developer-owned server.</p>
 
 <h2>Google API Limited Use Disclosure</h2>
 
-<p><strong>Save ChatGPT, Claude &amp; Gemini to Google Docs</strong>'s use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy#limited-use" target="_blank">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+<p><strong>AI Chat Exporter</strong>'s use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy#limited-use" target="_blank">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
 
-<p>Specifically, the extension uses only the <code>drive.file</code> OAuth scope — the narrowest available scope — which limits Drive API access exclusively to files the extension itself creates. Data obtained through the Google Drive API and Google Docs API is used solely for the user-facing feature of creating and updating documents the user explicitly exports. It is not used for advertising, transferred to third parties, or accessed by humans, except as required by law.</p>
+<p>Specifically, the extension uses only the <code>drive.file</code> OAuth scope. Google API data is used solely to create or update documents that you explicitly export, and is not used for advertising or accessed by the extension developer.</p>
 
 <h2>Data Sharing</h2>
 
-<p>No user data is sold, rented, or shared with third parties.</p>
-
-<p>Data is transmitted only to:</p>
+<p>The extension does not sell or rent user data. When you initiate an export, content is transmitted only as needed for the destination and options you selected:</p>
 
 <ul>
 <li><strong>Google services</strong> — when you authorize the extension to create or update a document in your Google Drive.</li>
-<li><strong>Image CDN domains</strong> — when you export a response containing images and grant permission to fetch from that origin. Only the image URL is requested; no other data is sent.</li>
+<li><strong>Notion</strong> — when you choose Notion, the selected content and page title are sent to the Notion API using the integration token you configured.</li>
+<li><strong>The Obsidian app on your device</strong> — when you choose Obsidian, the export content is passed to the app through the <code>obsidian://</code> link handler.</li>
+<li><strong>Image CDN domains</strong> — when an export contains images, the extension requests the image from its source domain if you grant the required access.</li>
+<li><strong>Google Forms</strong> — if you choose to send feedback or product suggestions, or uninstall the extension, a Google Form may open. Any information you submit there is sent to Google Forms.</li>
 </ul>
 
 <h2>Analytics &amp; Tracking</h2>
 
-<p>The extension does not include any analytics, telemetry, error reporting, or usage tracking. No data about how you use the extension leaves your browser.</p>
+<p>The extension does not include developer-operated analytics, telemetry, error reporting, or usage tracking. Export content leaves your browser only when required by the destination you choose, as described above.</p>
 
 <h2>Changes</h2>
 
