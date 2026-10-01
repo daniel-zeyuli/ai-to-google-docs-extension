@@ -347,7 +347,7 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 **Symptom:** The export button falls back below the response instead of joining the native action bar on DeepSeek or Perplexity.
 **Root cause:** `_findCopyActionBar` only recognized English `copy` labels within a narrowly selected response container. Perplexity localizes the Share button label (confirmed as `分享`) and its toolbar can live outside that container.
 **Fix:** Keep the existing localized-independent copy-label path when available. Otherwise, inspect icon-only SVG buttons within the nearest ancestor that contains just the current response; on Perplexity, prefer the confirmed `#pplx-icon-upload` share icon, then find its surrounding icon-button group. This avoids pairing responses and toolbars by document order. DeepSeek toolbar discovery remains mutation-driven; a toolbar only created after real hover is moved into when it appears.
-**Verification:** PARTIALLY VERIFIED. Live testing confirmed the button reliably appears (BUG-030/031's fixes on top of this), consistently landing on the right side of the response area on both platforms — but not pixel-aligned with the native action bar itself. Maintainer has accepted this as good enough; do not spend further effort on exact alignment unless it becomes hard to find or obstructs content (see project roadmap).
+**Verification:** PARTIALLY VERIFIED. Live testing confirmed the button reliably appears (BUG-030/031's fixes on top of this), consistently landing on the right side of the response area on both platforms — but not pixel-aligned with the native action bar itself. **Reopened 2026-09-30:** maintainer now wants it embedded in the native action row on DeepSeek and Perplexity; the previous “good enough” acceptance is superseded.
 **Related files:** `content.js` (`_findCopyActionBar`, `addDeepSeekButtons`, `addPerplexityButtons`).
 
 ---
@@ -390,6 +390,82 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 **Current evidence:** Maintainer reproduced via the single-response button after generation ended and provided the complete answer plus the live target container classes. The code change matches that DOM shape.
 **Verification:** VERIFIED live by the maintainer — exported DeepSeek document now contains full content (headings, prose, math, citations), not just the opening line.
 **Related files:** `content.js` (`extractMarkdown`, `processNode`, DeepSeek button click handler).
+
+---
+
+### BUG-033: ChatGPT redesign (Sept 2026) removed data-message-author-role and all data-testid attributes — export button and content extraction stopped working entirely, on the live production build
+**Date:** 2026-09-30
+**Severity:** P0 — affected the published Chrome Web Store version, not just local dev builds.
+**Symptom:** Export button missing entirely on ChatGPT (not misplaced — absent). Console showed no errors. Affected `getLastAIMessage`, `getAllAIMessages` (used by Last/Full/Pick export modes), and `addChatGPTButtons`.
+**Root cause:** Confirmed via live DevTools diagnostics: ChatGPT shipped a frontend rewrite that removed `data-message-author-role="assistant"` and every `data-testid` attribute our selectors depended on (`copy-turn-action-button`, `conversation-turn`, `thumbs-*-button`, `more-options-*`, etc.) — all now `null`. The new markdown content root is `[data-markdown-text-style="assistant-message"]`. Action buttons carry no `data-testid` and their `aria-label`s are localized (confirmed live: "复制消息" not "Copy message", "更多操作" not "More actions"), so no English-text-matching fallback could work either. `addChatGPTButtons`'s `container = msg.closest('.group\\/conversation-turn') || msg.closest('[data-testid^="conversation-turn"]')` resolved to `null` for every message once `data-testid` vanished, hitting `if (!container) continue;` and silently skipping every response — no exception, no console output, matching the "no button anywhere, no error" report exactly.
+**Fix:**
+- `_chatGPTFindResponses()`: new primary selector `[data-markdown-text-style="assistant-message"]`, with the legacy `data-message-author-role` lookup kept as a fallback (staged-rollout safety net).
+- `_widenChatGPTScope(msg)`: when both `.closest()` turn-boundary selectors fail, fall back to a fixed 7-level walk-up from the message content as the search scope, since no turn-boundary attribute survived to replace `data-testid^="conversation-turn"`.
+- `_iconButtonCount(el)`: counts icon-only buttons (`button:has(svg)` with empty text) — a language- and attribute-independent way to recognize the action bar. Confirmed live: the real bar has ~8 buttons (复制消息/编辑消息/评价回复/分享/添加到项目来源/朗读/重新生成回复/更多操作); a response's own inline tools (e.g. table copy/expand) only ever have 2. Threshold of 4 reliably distinguishes them.
+- `findChatGPTActionBar` and the `reliable` check in `addChatGPTButtons` both gained this icon-count strategy as an addition alongside (not a replacement for) the existing `data-testid`-based checks.
+- `getAllAIMessages`/`getLastAIMessage`'s ChatGPT branches now call `_chatGPTFindResponses()` instead of querying `data-message-author-role` directly.
+**Verification:** Root cause fully confirmed via live console diagnostics (multiple rounds — see session transcript). Code fix written but **not yet live-tested** — needs an emergency-priority retest and, if the extension is already published, an urgent point release, since the currently-live Chrome Web Store version has zero working ChatGPT export until this ships.
+**Lesson:** Same recurring lesson as BUG-003/011/018/021: ChatGPT's frontend is redesigned periodically without warning, and past redesigns have removed `data-testid` incrementally — this one removed it (and the role attribute) entirely in one pass. Any ChatGPT selector strategy needs a non-attribute, non-English-text fallback (icon/structural counting, as now used here and already proven for DeepSeek/Perplexity in BUG-028) rather than assuming `data-testid` will always exist in some form.
+**Related files:** `content.js` (`_chatGPTFindResponses`, `_widenChatGPTScope`, `_iconButtonCount`, `findChatGPTActionBar`, `addChatGPTButtons`, `getAllAIMessages`, `getLastAIMessage`).
+
+---
+
+### BUG-034: BUG-033's ChatGPT fix placed the button on its own full-width line instead of inline with the action bar
+**Date:** 2026-09-30
+**Symptom:** After BUG-033 shipped, the export button reappeared on ChatGPT (and had the same symptom on Claude, tracked separately) but rendered as a full-width row below the icon bar instead of inline with copy/thumbs/share.
+**Root cause:** BUG-033's icon-button-count strategy walked up from `msg` (the message content) directly, counting icon buttons in each ancestor. The first ancestor to reach the ≥4 threshold was a `flex flex-col` (vertical) wrapper that merely *contains* the actual button row further down, not the row itself. Appending into a column-flex container stacks the new child on its own line rather than inline.
+**Fix:** Find the icon-only buttons first, then walk up *from one of those buttons* (mirroring the already-correct legacy `copyBtn.parentElement` pattern and the DeepSeek/Perplexity `_findCopyActionBarImpl` approach) instead of from the message content. This reliably lands on the buttons' own immediate flex-row container.
+**Related files:** `content.js` (`findChatGPTActionBar`).
+
+---
+
+### BUG-035: BUG-034's fix could grab an adjacent turn's action bar, making the button jump to the wrong message
+**Date:** 2026-09-30
+**Symptom:** On refresh, the export button briefly appeared correctly (bottom-right, near the intended message), then a moment later jumped to a completely different position — the top of the conversation, on an earlier/different message.
+**Root cause:** BUG-034's fix searched for icon buttons within `_widenChatGPTScope(msg)`, a fixed 7-level walk-up from the message. On pages where multiple turns share a common ancestor within 7 levels (likely, given ChatGPT's current DOM nests turns fairly shallowly), that scope could contain icon buttons belonging to a *different* message entirely. The first pass placed the button provisionally (fallback wrapper) near the right message; a later re-scan then found a "reliable" action bar via this over-wide search, but the bar it found belonged to the wrong turn, and `insertBeforeMoreButton` relocated the button there — matching the "briefly correct, then jumps" symptom exactly (see BUG-024's relocate-on-later-pass mechanism, which this inherited).
+**Fix:** `_widenChatGPTScope` now finds the smallest ancestor containing **only one** `[data-markdown-text-style="assistant-message"]` (the same bounding technique `_findCopyActionBarImpl` already used for DeepSeek/Perplexity), falling back to the old fixed-depth widen only if that search can't resolve cleanly. Both the "does this message already have a button" check in `addChatGPTButtons` and the icon-button search in `findChatGPTActionBar` now share this single, turn-bounded scope function, so neither can bleed into an adjacent turn.
+**Lesson:** A fixed-depth ancestor walk is never safe on its own once there's no structural marker for the boundary you actually care about — it has to be bounded by a positive check (e.g. "exactly one of X in scope"), not just a depth number that happened to work in one observed case.
+**Related files:** `content.js` (`_widenChatGPTScope`, `findChatGPTActionBar`, `addChatGPTButtons`).
+
+---
+
+### BUG-036: BUG-034/035's icon-count heuristic still landed one wrapper too high — button rendered on its own line above the icon row
+**Date:** 2026-09-30
+**Symptom:** After BUG-035 shipped, the button no longer jumped between messages and wasn't full-width, but still rendered on its own row directly above the native copy/thumbs/share icon row instead of inline with it.
+**Root cause:** Live diagnostic starting from the actual "复制消息" (copy) button found a clean, semantic, non-hashed class name one level up: `turn-action-controls` — the true flex-row container holding the real action icons (only 2 buttons in that immediate group, well under BUG-034's ≥4 threshold). The icon-counting walk-up kept climbing past this correct row looking for 4+ buttons and landed on an outer wrapper that merely stacks it above the row.
+**Fix:** Prefer `[class*="turn-action-controls"]` as a direct match within the message's bounded scope — when multiple such groups exist per turn (e.g. one for copy/edit, another for thumbs/share/regenerate/more), pick the one with the most icon buttons (the main action row). The icon-button-count walk-up from BUG-034/035 is kept as a fallback only if this class is ever removed too.
+**Lesson:** When a redesign strips `data-testid` and localizes labels, check for any remaining semantic (non-hashed) class names before falling back to generic structural heuristics (counting/walking) — a stable class name, when present, is far more precise than any depth- or count-based guess.
+**Related files:** `content.js` (`findChatGPTActionBar`).
+
+---
+
+### BUG-037: BUG-036's precise turn-action-controls match was found but then rejected by the reliable-count gate, still falling back to the isolated-row layout
+**Date:** 2026-09-30
+**Symptom:** After BUG-036 shipped, the button still rendered on its own line above the icon row on ChatGPT — same visual symptom as before, despite `findChatGPTActionBar` now correctly returning the `turn-action-controls` element.
+**Root cause:** `addChatGPTButtons`'s `reliable` check requires `_iconButtonCount(actionArea) >= 4` as one of its conditions (tuned for the coarser BUG-034/035 icon-counting fallback). The precise `turn-action-controls` group BUG-036 finds only has 2-3 buttons in that specific group (e.g. just copy+edit), so `reliable` evaluated false even though `actionArea` was now correct — sending the button down the fallback-wrapper path anyway, identical in appearance to the "not found at all" case.
+**Fix:** `reliable` now also accepts `actionArea.className` containing `turn-action-controls` as sufficient on its own, independent of button count — a class-name match from BUG-036 is a higher-confidence signal than a generic count threshold and must not be gated behind it.
+**Lesson:** When adding a more precise detection strategy, audit every downstream consumer of its result (here, a separate `reliable` gate) — a stricter/different-shaped signal from the new strategy can be silently rejected by a threshold tuned for the old one.
+**Related files:** `content.js` (`addChatGPTButtons`).
+
+---
+
+### BUG-038: ChatGPT toolbar is a sibling of the Markdown root, outside the smallest assistant-only scope
+**Date:** 2026-09-30
+**Symptom:** ChatGPT Export remains inside `.cgd-fallback-wrapper` after a response has finished, so it sits on a separate right-aligned line instead of inside the native action toolbar.
+**Root cause:** A live DevTools ancestor trace showed the fallback wrapper inside ChatGPT's `MarkdownRoot-*` node. `_widenChatGPTScope()` returned the smallest ancestor containing one assistant response; the native `turn-action-controls` toolbar is rendered beside the Markdown root, so `findChatGPTActionBar()` could not see it from that narrow scope and kept the button in fallback.
+**Fix:** Expand the search scope to the widest ancestor that still contains exactly one assistant response. This includes sibling action controls while stopping before a neighboring assistant turn enters the scope; the existing fallback-button relocation then moves the button into the detected toolbar.
+**Verification:** Source change and syntax check completed; live placement still needs verification after reloading the unpacked extension and refreshing ChatGPT.
+**Related files:** `content.js` (`_chatGPTResponsesInScope`, `_widenChatGPTScope`, `findChatGPTActionBar`).
+
+---
+
+### BUG-039: DeepSeek and Perplexity action-bar search scope can stop before sibling controls
+**Date:** 2026-09-30
+**Symptom:** The export button remains in the right-aligned fallback row instead of joining the native action toolbar.
+**Root cause:** `_findCopyActionBarImpl()` searched the nearest ancestor containing exactly one top-level response. The toolbar can be a sibling of the response prose outside that narrow ancestor, so icon-based lookup returned `null` and the response stayed in fallback.
+**Fix:** Search outward to the widest ancestor that still contains exactly the current top-level response. Stop widening before a neighboring answer enters scope.
+**Verification:** Source change and syntax check completed; live placement on both platforms still needs verification.
+**Related files:** `content.js` (`_findCopyActionBarImpl`).
 
 ---
 

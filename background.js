@@ -65,13 +65,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // ── Context menu: export selected text ──
 chrome.runtime.setUninstallURL('https://docs.google.com/forms/d/e/1FAIpQLSeOIzgm06tnL3OPgGbcML5TNHTw3lARi1eSei5v9qA34FWV7g/viewform');
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
-    id: 'cgd-export-selection',
-    title: 'Export to Docs',
-    contexts: ['selection']
-  });
-});
+let contextMenuRegistrationQueue = Promise.resolve();
+
+function registerSelectionContextMenu() {
+  // Serialize registrations: overlapping onInstalled events can both finish
+  // removeAll() before either create() runs, leaving the second create() with
+  // the same id and producing an unchecked runtime.lastError.
+  contextMenuRegistrationQueue = contextMenuRegistrationQueue.then(() => new Promise((resolve) => {
+    chrome.contextMenus.removeAll(() => {
+      const removeError = chrome.runtime.lastError;
+      if (removeError) {
+        console.warn('[AI Chat Exporter] Could not clear context menus:', removeError.message);
+        resolve();
+        return;
+      }
+
+      chrome.contextMenus.create({
+        id: 'cgd-export-selection',
+        title: 'Export to Docs',
+        contexts: ['selection']
+      }, () => {
+        const createError = chrome.runtime.lastError;
+        if (createError) {
+          console.warn('[AI Chat Exporter] Could not create selection context menu:', createError.message);
+        }
+        resolve();
+      });
+    });
+  }));
+}
+
+chrome.runtime.onInstalled.addListener(registerSelectionContextMenu);
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'cgd-export-selection' && tab?.id) {

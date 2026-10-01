@@ -924,9 +924,8 @@
 
   function getLastAIMessage() {
     if (isChatGPT) {
-      const msgs = document.querySelectorAll('[data-message-author-role="assistant"]');
-      const last = msgs[msgs.length - 1];
-      return last ? (last.querySelector('.markdown') || last.querySelector('[class*="markdown"]') || last.querySelector('article') || last) : null;
+      const msgs = _chatGPTFindResponses();
+      return msgs[msgs.length - 1] || null;
     }
     if (isGemini) {
       const msgs = getAllAIMessages();
@@ -1080,11 +1079,10 @@
 
   function getAllAIMessages() {
     if (isChatGPT) {
-      const standard = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'))
-        .map(el => el.querySelector('.markdown') || el.querySelector('[class*="markdown"]') || el.querySelector('article') || el);
-      // Also include DALL-E / image turns that lack the assistant role attribute
+      const standard = _chatGPTFindResponses();
+      // Also include DALL-E / image turns that lack the assistant markdown root
       for (const turn of document.querySelectorAll('[data-testid^="conversation-turn"]')) {
-        if (turn.querySelector('[data-message-author-role="assistant"]')) continue;
+        if (turn.querySelector('[data-markdown-text-style="assistant-message"], [data-message-author-role="assistant"]')) continue;
         if (turn.querySelector('[data-message-author-role="user"]')) continue;
         if (findChatGPTActionBar(turn)) standard.push(turn);
       }
@@ -1686,18 +1684,83 @@
   //  CHATGPT: INJECT BUTTONS
   // ═══════════════════════════════════════════════════════════════
 
+  // ChatGPT's Sept 2026 redesign dropped data-message-author-role and every
+  // data-testid attribute from the per-turn DOM entirely (BUG-033). The new
+  // markdown content root is marked with data-markdown-text-style="assistant-message"
+  // instead. Legacy selector kept as a fallback in case of a staged rollout.
+  function _chatGPTFindResponses() {
+    const modern = Array.from(document.querySelectorAll('[data-markdown-text-style="assistant-message"]'));
+    if (modern.length) return modern;
+    return Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'))
+      .map(el => el.querySelector('.markdown') || el.querySelector('[class*="markdown"]') || el.querySelector('article') || el);
+  }
+
+  // With data-testid gone, `.closest('[data-testid^="conversation-turn"]')` no
+  // longer resolves a turn boundary. Walk up to the widest ancestor that still
+  // contains ONLY this assistant response. The smallest one can stop at the
+  // Markdown body while ChatGPT renders the action bar beside it (not inside
+  // it), which forces the export button into the right-aligned fallback row.
+  // Stop before a second assistant response enters scope so action-bar lookup
+  // cannot jump to an adjacent turn (BUG-035, BUG-038).
+  function _chatGPTResponsesInScope(scope) {
+    const modernSelector = '[data-markdown-text-style="assistant-message"]';
+    const modern = [
+      ...(scope.matches?.(modernSelector) ? [scope] : []),
+      ...scope.querySelectorAll(modernSelector)
+    ];
+    if (modern.length) return modern;
+    const legacySelector = '[data-message-author-role="assistant"]';
+    const legacy = [
+      ...(scope.matches?.(legacySelector) ? [scope] : []),
+      ...scope.querySelectorAll(legacySelector)
+    ];
+    return legacy
+      .map(el => el.querySelector('.markdown') || el.querySelector('[class*="markdown"]') || el.querySelector('article') || el);
+  }
+
+  function _widenChatGPTScope(msg) {
+    let scope = msg.parentElement;
+    let widestSingleResponseScope = null;
+    for (let i = 0; i < 10 && scope && scope !== document.body; i++) {
+      const inScope = _chatGPTResponsesInScope(scope);
+      if (inScope.length !== 1 || inScope[0] !== msg) break;
+      widestSingleResponseScope = scope;
+      scope = scope.parentElement;
+    }
+    if (widestSingleResponseScope) return widestSingleResponseScope;
+    // Fallback: couldn't bound it cleanly (e.g. legacy DOM) — fixed-depth widen.
+    let p = msg;
+    for (let i = 0; i < 7 && p.parentElement; i++) p = p.parentElement;
+    return p;
+  }
+
+  // Counts icon-only buttons (no visible text) — a language- and attribute-
+  // independent way to recognize ChatGPT's action bar now that data-testid is
+  // gone and labels are localized (confirmed live: "复制消息", "更多操作", etc.).
+  function _iconButtonCount(el) {
+    return Array.from(el.querySelectorAll('button:has(svg)')).filter(b => !b.textContent.trim()).length;
+  }
+
   function addChatGPTButtons() {
-    const messages = document.querySelectorAll('[data-message-author-role="assistant"]');
+    const messages = _chatGPTFindResponses();
     for (const msg of messages) {
-      const container = msg.closest('.group\\/conversation-turn') || msg.closest('[data-testid^="conversation-turn"]');
+      const container = msg.closest('.group\\/conversation-turn') ||
+                        msg.closest('[data-testid^="conversation-turn"]') ||
+                        _widenChatGPTScope(msg);
       if (!container) continue;
-      const actionArea = findChatGPTActionBar(container);
-      // "Reliable" = the real per-message action bar (has more/thumbs/copy button),
-      // as opposed to a generic div.flex fallback match that could be anything.
+      const actionArea = findChatGPTActionBar(container, msg);
+      // "Reliable" = the real per-message action bar (has more/thumbs/copy button,
+      // or matches the stable "turn-action-controls" class BUG-036 found — that
+      // match is trustworthy on its own even with only 2-3 buttons in that
+      // specific group, so it must NOT be gated behind the >=4 count check
+      // below, which was tuned for the coarser icon-counting fallback and was
+      // silently rejecting correct turn-action-controls matches (BUG-037)).
       const reliable = !!(actionArea && (
         actionArea.querySelector('button[data-testid*="more"]') ||
         actionArea.querySelector('button[data-testid*="thumbs"]') ||
-        actionArea.querySelector('button[data-testid*="copy"]')
+        actionArea.querySelector('button[data-testid*="copy"]') ||
+        (actionArea.className && String(actionArea.className).includes('turn-action-controls')) ||
+        _iconButtonCount(actionArea) >= 4
       ));
       const existingBtn = container.querySelector('.' + BUTTON_CLASS);
       if (existingBtn) {
@@ -1758,7 +1821,7 @@
     }
   }
 
-  function findChatGPTActionBar(container) {
+  function findChatGPTActionBar(container, msg) {
     // Primary: copy action button is the most specific ChatGPT action-bar indicator.
     // Walk up until we find the bar that also has the "more" button (three dots).
     const copyBtn = container.querySelector('button[data-testid="copy-turn-action-button"]');
@@ -1769,6 +1832,37 @@
         bar = bar.parentElement;
       }
       return copyBtn.parentElement;
+    }
+
+    // New DOM (Sept 2026, BUG-033/034/035/036): no data-testid left anywhere and
+    // labels are localized, but ChatGPT kept one stable, semantic (non-hashed)
+    // class name for the actual icon row: "turn-action-controls" — confirmed
+    // live as the direct flex-row parent of the real copy/thumbs/share/more
+    // buttons. Prefer it outright; it's far more precise than counting icon
+    // buttons up an unknown number of ancestor levels (BUG-034/BUG-035's fix
+    // still landed one wrapper too high, rendering our button on its own line
+    // above the real row instead of inside it).
+    if (msg) {
+      const scope = _widenChatGPTScope(msg);
+      const controlGroups = Array.from(scope.querySelectorAll('[class*="turn-action-controls"]'));
+      if (controlGroups.length) {
+        // Multiple groups can exist per turn (e.g. copy/edit vs. thumbs/share/
+        // more) — the one with the most icon buttons is the main action row.
+        controlGroups.sort((a, b) => _iconButtonCount(b) - _iconButtonCount(a));
+        return controlGroups[0];
+      }
+      // Fallback: find the icon-only buttons themselves first, then walk up
+      // FROM one of them (not from msg) to find their immediate container —
+      // walking up from msg directly can land on a wider `flex flex-col`
+      // wrapper that merely *contains* the button row further down (BUG-034).
+      const iconBtns = Array.from(scope.querySelectorAll('button:has(svg)'))
+        .filter(b => !b.textContent.trim());
+      if (iconBtns.length >= 4) {
+        let bar = iconBtns[0].parentElement;
+        for (let i = 0; i < 5 && bar; i++, bar = bar.parentElement) {
+          if (_iconButtonCount(bar) >= 4 && scope.contains(bar)) return bar;
+        }
+      }
     }
 
     // Secondary: role="group" with aria-label — but only if it contains thumbs/copy buttons
@@ -2114,14 +2208,21 @@
     if (!response) return null;
     const responseSelector = isPerplexity ? '.prose' : '.ds-markdown';
     let responseScope = response.parentElement;
+    let widestSingleResponseScope = null;
     while (responseScope && responseScope !== document.body) {
       const responseNodes = responseScope.querySelectorAll(responseSelector);
       const topLevelResponses = Array.from(responseNodes).filter(node =>
         !node.parentElement?.closest(responseSelector));
-      if (topLevelResponses.length === 1 && topLevelResponses[0] === response) break;
+      if (topLevelResponses.length !== 1 || topLevelResponses[0] !== response) break;
+      widestSingleResponseScope = responseScope;
       responseScope = responseScope.parentElement;
     }
-    if (!responseScope || responseScope === document.body) return null;
+    // The nearest response-only ancestor can contain just the prose body while
+    // the native action toolbar is rendered beside it. Keep widening while the
+    // scope still identifies exactly this one response, so sibling controls
+    // become searchable without crossing into an adjacent answer.
+    responseScope = widestSingleResponseScope;
+    if (!responseScope) return null;
 
     const iconButtons = Array.from(responseScope.querySelectorAll('button:has(svg)'))
       .filter(btn => !btn.textContent.trim());
@@ -2139,7 +2240,7 @@
         if (iconButtonCount < 2) continue;
 
         // The icon group may be a sibling of the prose node, but stays inside
-        // the nearest ancestor that contains only this response.
+        // the widest bounded ancestor that contains only this response.
         if (responseScope.contains(bar)) return bar;
       }
     }
