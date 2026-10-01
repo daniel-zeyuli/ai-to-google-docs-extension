@@ -469,6 +469,26 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 
 ---
 
+### BUG-040: DeepSeek and Perplexity action-bar lookup can select a vertical wrapper
+**Date:** 2026-09-30
+**Symptom:** Export appears on a separate right-aligned row while the native action icons remain on another line.
+**Root cause:** Two misses combined on DeepSeek. First, `_findCopyActionBarImpl()` accepted ancestors by button count without checking horizontal layout. After that was tightened, `addDeepSeekButtons()` still used `resp.closest('[class*="message"]')`; DeepSeek's response node itself has a `ds-assistant-message-*` class, so the search scope stopped at the prose and omitted its sibling toolbar. DeepSeek also exposes some controls as `[role="button"]`, which the icon-only fallback did not include.
+**Fix:** `_findHorizontalActionRow()` validates controls' rendered positions and rejects column-flex wrappers. DeepSeek now avoids using the prose node as its own message container, and icon/copy discovery includes role buttons.
+**Verification:** First positioning attempt did not fix DeepSeek; maintainer confirmed it remained in the same position. Latest source change addresses the excluded-sibling scope and role-button gaps; live placement still needs verification after reloading the unpacked extension.
+**Related files:** `content.js` (`_findHorizontalActionRow`, `_findCopyActionBarImpl`).
+
+---
+
+### BUG-041: Claude export button is appended to a broad wrapper instead of its native toolbar row
+**Date:** 2026-09-30
+**Symptom:** Claude's Export control appears on its own row under the native copy/audio/rating toolbar.
+**Root cause:** The `.text-text-300` selector can match a broad ancestor that contains the toolbar but is not the toolbar itself. Appending a wrapper there places Export on a separate line.
+**Fix:** Locate the horizontal action row from Claude's non-code-block Copy button using `_findHorizontalActionRow()` and append Export directly to that row.
+**Verification:** Source checks completed; live placement on Claude still needs verification after reloading the unpacked extension.
+**Related files:** `content.js` (`addClaudeButtons`, `_findHorizontalActionRow`).
+
+---
+
 ## v4.3 planned features
 
 ### High priority

@@ -2110,6 +2110,40 @@
   //  CLAUDE: INJECT BUTTONS
   // ═══════════════════════════════════════════════════════════════
 
+  // Find the compact, horizontal toolbar that owns a known native control.
+  // Counting buttons alone can select an outer flex-column wrapper, which
+  // makes our button render on a separate line despite finding the right turn.
+  function _findHorizontalActionRow(control, scope, maxLevels = 8) {
+    if (!control) return null;
+    let candidate = control.parentElement;
+    for (let level = 0; level < maxLevels && candidate; level++, candidate = candidate.parentElement) {
+      if (scope && !scope.contains(candidate)) break;
+      const style = getComputedStyle(candidate);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.flexDirection === 'column' || style.flexDirection === 'column-reverse') continue;
+
+      const controls = Array.from(candidate.querySelectorAll('button, [role="button"]'))
+        .filter(el => !el.classList.contains(BUTTON_CLASS))
+        .map(el => ({ element: el, rect: el.getBoundingClientRect() }))
+        .filter(item => item.rect.width > 0 && item.rect.height > 0 &&
+          getComputedStyle(item.element).visibility !== 'hidden' &&
+          getComputedStyle(item.element).display !== 'none');
+      if (controls.length < 2) continue;
+
+      const centers = controls.map(item => item.rect.top + item.rect.height / 2);
+      const rowTolerance = Math.max(12, Math.min(...controls.map(item => item.rect.height)) * 0.65);
+      if (Math.max(...centers) - Math.min(...centers) > rowTolerance) continue;
+
+      // Require a layout container that can accept a child inline. In
+      // particular, do not append to a column flex wrapper that only contains
+      // the real toolbar as a descendant.
+      if (style.display === 'flex' || style.display === 'inline-flex') {
+        if (style.flexDirection !== 'row' && style.flexDirection !== 'row-reverse') continue;
+      }
+      return candidate;
+    }
+    return null;
+  }
+
   function addClaudeButtons() {
     const copyButtons = document.querySelectorAll('button[aria-label="Copy"]');
 
@@ -2136,11 +2170,10 @@
       }
       if (isCodeBlockCopy) continue;
 
-      // Find the message-level action bar (try multiple class names Claude has used)
-      const actionBar = copyBtn.closest('.text-text-300') ||
-                        copyBtn.closest('[class*="message-actions"]') ||
-                        copyBtn.closest('[class*="action-bar"]') ||
-                        copyBtn.parentElement?.parentElement;
+      // Anchor placement to the actual horizontal row of response controls.
+      // Broad Claude utility classes such as `.text-text-300` can also match
+      // wrappers above the toolbar, which stacks Export on a separate row.
+      const actionBar = _findHorizontalActionRow(copyBtn);
 
       if (!actionBar) continue;
       if (actionBar.querySelector('.' + BUTTON_CLASS)) continue;
@@ -2166,10 +2199,7 @@
       const btn = createExportButton();
       btn.addEventListener('click', (e) => handleExportClick(e, contentEl));
 
-      const wrapper = document.createElement('div');
-      wrapper.className = 'w-fit';
-      wrapper.appendChild(btn);
-      actionBar.appendChild(wrapper);
+      actionBar.appendChild(btn);
     }
   }
 
@@ -2194,15 +2224,11 @@
   function _findCopyActionBarImpl(container, response) {
     const copyBtn = Array.from(container.querySelectorAll(
       'button[aria-label*="copy" i], button[title*="copy" i], ' +
+      '[role="button"][aria-label*="copy" i], [role="button"][title*="copy" i], ' +
       'button[class*="copy"], span[class*="copy"], [data-testid*="copy"]'
     )).find(btn => !btn.closest('pre, [data-code-block], [class*="code-block"], [class*="codeblock"]'));
     if (copyBtn) {
-      let bar = copyBtn.parentElement;
-      for (let i = 0; i < 5 && bar; i++) {
-        if (bar.querySelectorAll('button, [role="button"]').length >= 2) return bar;
-        bar = bar.parentElement;
-      }
-      return copyBtn.parentElement;
+      return _findHorizontalActionRow(copyBtn, container, 8);
     }
 
     if (!response) return null;
@@ -2224,7 +2250,7 @@
     responseScope = widestSingleResponseScope;
     if (!responseScope) return null;
 
-    const iconButtons = Array.from(responseScope.querySelectorAll('button:has(svg)'))
+    const iconButtons = Array.from(responseScope.querySelectorAll('button:has(svg), [role="button"]:has(svg)'))
       .filter(btn => !btn.textContent.trim());
     const spriteShareButton = isPerplexity
       ? iconButtons.find(btn => Array.from(btn.querySelectorAll('svg use')).some(use =>
@@ -2233,16 +2259,10 @@
     const candidates = spriteShareButton ? [spriteShareButton] : iconButtons;
 
     for (const button of candidates) {
-      let bar = button.parentElement;
-      for (let i = 0; i < 5 && bar; i++, bar = bar.parentElement) {
-        const iconButtonCount = Array.from(bar.querySelectorAll('button:has(svg), [role="button"]:has(svg)'))
-          .filter(btn => !btn.textContent.trim()).length;
-        if (iconButtonCount < 2) continue;
-
-        // The icon group may be a sibling of the prose node, but stays inside
-        // the widest bounded ancestor that contains only this response.
-        if (responseScope.contains(bar)) return bar;
-      }
+      const bar = _findHorizontalActionRow(button, responseScope, 8);
+      // The icon group may be a sibling of the prose node, but stays inside
+      // the widest bounded ancestor that contains only this response.
+      if (bar && responseScope.contains(bar)) return bar;
     }
     return null;
   }
@@ -2291,9 +2311,14 @@
   function addDeepSeekButtons() {
     const responses = _deepSeekFindResponses();
     for (const resp of responses) {
-      const container = resp.closest('[class*="message"]') ||
-                        resp.closest('[class*="chat-message"]') ||
-                        resp.parentElement;
+      // DeepSeek's markdown response itself has a `ds-assistant-message-*`
+      // class, so `.closest('[class*="message"]')` can return the prose node
+      // and exclude its sibling action toolbar. Start with an enclosing
+      // message wrapper, never the response node itself.
+      const messageContainer = resp.closest('[class*="message"]');
+      const container = messageContainer && messageContainer !== resp
+        ? messageContainer
+        : resp.parentElement;
       if (!container) continue;
       _addPlatformButton(resp, container);
     }
