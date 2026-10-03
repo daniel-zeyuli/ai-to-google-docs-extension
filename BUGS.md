@@ -500,6 +500,25 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 
 ---
 
+### BUG-043: exportFullConversation silently drops every user turn on Claude if font-user-message ever stops matching
+**Date:** 2026-10-03
+**Follow-up to:** BUG-042's investigation, which found four other call sites relying on the same possibly-stale `font-user-message` class and deliberately left them unchanged pending live confirmation (see BUG-042's "Not yet investigated" note).
+**Impact assessment:** Of the four, only this one was judged worth a code change without live data: `getAllUserMessages` only feeds a small cosmetic preview string in the picker panel (blank if missing, not wrong), `_claudeFindResponses`'s fallback is dead code under current conditions (the primary `.standard-markdown` path is confirmed working), and `extractMarkdown`'s ancestor-walk fallback only triggers on an already-degraded extraction. `exportFullConversation`'s Claude branch is different: if `font-user-message` matched zero elements, the exported "full conversation" document would silently contain only Claude's replies with every question missing, and a reader has no way to know content is missing.
+**Fix:** If `userEls.length === 0` while `aiEls.length > 0` (AI replies found but no user turns — structurally implausible in a real conversation), insert a `⚠️ Notice` section at the top of the exported document explaining that user messages could not be detected, instead of silently producing an incomplete-looking-complete document.
+**Verification:** Not live-tested. This is a safety net for an unconfirmed hypothesis, not a fix for a confirmed bug — if the class name turns out to still be valid, this code never triggers.
+**Related files:** `content.js` (`exportFullConversation`).
+
+---
+
+### IMPROVEMENT: Scoped the "Export to Docs" right-click menu to supported platforms only
+**Date:** 2026-10-03
+**Previous behavior:** The context menu item appeared when selecting text on *any* website (no `documentUrlPatterns`), doing nothing if clicked anywhere other than the 5 supported AI platforms — functional, but confusing clutter in the context menu everywhere else, and broader than necessary for the `contextMenus` permission's stated purpose.
+**Change:** Added `documentUrlPatterns` to the `chrome.contextMenus.create()` call, matching the same 5 hosts as `manifest.json`'s `content_scripts.matches` (keep these two lists in sync if either changes).
+**Action needed:** The CWS dashboard's `contextMenus` permission justification text described the old (unscoped) behavior — "appears everywhere, only functions on supported pages." That text is now inaccurate and needs updating before the next store submission; `privacy.html`'s wording was already generic enough to not need a change.
+**Related files:** `background.js` (`registerSelectionContextMenu`).
+
+---
+
 ## v4.3 planned features
 
 ### High priority

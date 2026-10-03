@@ -981,6 +981,18 @@
       const userEls = Array.from(document.querySelectorAll('[class*="font-user-message"]'))
         .filter(el => !el.parentElement?.closest('[class*="font-user-message"]'));
       const aiEls = _claudeFindResponses();
+      // Defensive check (BUG-042 follow-up): font-user-message is the only signal
+      // identifying Claude's own user-message turns, and this project has seen
+      // host platforms rename classes across redesigns before (BUG-018, BUG-033).
+      // If it ever stops matching, fail loudly in the exported doc itself rather
+      // than silently producing a "full conversation" that's missing every
+      // question — a reader has no way to know content is missing otherwise.
+      if (userEls.length === 0 && aiEls.length > 0) {
+        turns.push({
+          role: '⚠️ Notice',
+          text: "This export is missing your own messages — only Claude's responses could be detected on this version of the page. If you see this, please report it so the selector can be fixed."
+        });
+      }
       const all = [
         ...userEls.map(el => ({ el, role: 'You' })),
         ...aiEls.map(el => ({ el, role: 'Claude' }))

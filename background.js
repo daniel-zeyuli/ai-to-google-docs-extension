@@ -83,7 +83,17 @@ function registerSelectionContextMenu() {
       chrome.contextMenus.create({
         id: 'cgd-export-selection',
         title: 'Export to Docs',
-        contexts: ['selection']
+        contexts: ['selection'],
+        // Scope the menu item to the same hosts content.js actually runs on —
+        // without this it was appearing (and doing nothing) on every website.
+        // Keep this list in sync with manifest.json's content_scripts.matches.
+        documentUrlPatterns: [
+          'https://chatgpt.com/*',
+          'https://gemini.google.com/*',
+          'https://claude.ai/*',
+          'https://chat.deepseek.com/*',
+          'https://www.perplexity.ai/*'
+        ]
       }, () => {
         const createError = chrome.runtime.lastError;
         if (createError) {
