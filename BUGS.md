@@ -489,6 +489,17 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 
 ---
 
+### BUG-042: Claude export button also appears under the user's own message, not just under the AI reply
+**Date:** 2026-10-03
+**Symptom:** Maintainer reported (no live DOM access this session): for one exchange on Claude, two export buttons appear — one incorrectly under the user's own question, one correctly under Claude's reply action bar.
+**Root cause (hypothesis, not live-confirmed):** `addClaudeButtons` iterates every `button[aria-label="Copy"]` on the page, including the user's own message's Copy button. To tell user messages apart from AI replies, it walked up to 10 levels from the action bar looking for a `.standard-markdown` descendant, then excluded the result only if `[class*="font-user-message"]` was also found inside it. Two ways this fails: (a) 10 levels is generous enough that, for a user message's own Copy button, the walk can overshoot into a shared ancestor that also contains the *next* turn's `.standard-markdown` (Claude's reply), incorrectly treating the user's own button as belonging to that reply; (b) the `font-user-message` class name is the *only* signal excluding user messages, and this project has repeatedly seen host platforms rename classes across redesigns (BUG-018 for Claude specifically, BUG-033 for ChatGPT) — if Claude renamed it, this exclusion silently stops firing for every user message.
+**Fix:** Tightened the walk-up budget from 10 to 6 levels, and — more importantly — added a class-name-independent structural check: the assistant's own Copy button can never precede its own response's `.standard-markdown` in document order (`Node.DOCUMENT_POSITION_PRECEDING`). A user message's Copy button that walked into the *next* turn's markdown would necessarily come before it in the DOM, so this check rejects it regardless of whether the `font-user-message` class still exists or matches. This fix holds even if the class-name hypothesis above is wrong.
+**Not yet investigated:** Four other call sites use the same `font-user-message` class to identify Claude user messages (`extractMarkdown`'s ancestor-walk fallback, `exportFullConversation`'s role labeling, `_claudeFindResponses`'s fallback path, `getAllUserMessages`). If the class really has been renamed, `exportFullConversation`'s Claude branch would silently omit "You" turns from full-conversation exports (a content-correctness bug, not just a placement one) and `getAllUserMessages` would return an empty array. **Not changed without live confirmation** — scope was kept to the one reported symptom. If the maintainer confirms this class is stale when testing BUG-042's fix, these four locations need the same scrutiny.
+**Verification:** Not live-tested — maintainer was away from testing when this was written; needs confirmation on an actual Claude conversation (ask a question, check only one export button appears, under the reply).
+**Related files:** `content.js` (`addClaudeButtons`; related but untouched: `extractMarkdown`, `exportFullConversation`, `_claudeFindResponses`, `getAllUserMessages`).
+
+---
+
 ## v4.3 planned features
 
 ### High priority

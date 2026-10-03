@@ -1325,7 +1325,7 @@
         _seenIds.add(e.fileId); _seenNames.add(e.fileName);
         return true;
       })
-      .slice(0, 2);
+      .slice(0, 8); // matches storage caps: ≤3 per-conversation + ≤5 global, minus overlaps
 
     let selectedChip = null;
 
@@ -1368,6 +1368,11 @@
       recentLabel.className = 'cgd-recent-label';
       recentLabel.textContent = 'Append to recent:';
       recentRow.appendChild(recentLabel);
+      // Chips live in their own scrollable strip — label stays fixed above it,
+      // so showing up to 8 entries doesn't push the rest of the panel down.
+      const chipsScroll = document.createElement('div');
+      chipsScroll.className = 'cgd-recent-chips-scroll';
+      recentRow.appendChild(chipsScroll);
       recents.forEach(exp => {
         const chip = document.createElement('div');
         chip.className = 'cgd-recent-chip';
@@ -1417,7 +1422,7 @@
         chip.appendChild(nameEl);
         chip.appendChild(tsEl);
         chip.appendChild(actions);
-        recentRow.appendChild(chip);
+        chipsScroll.appendChild(chip);
       });
     }
     buildRecentChips();
@@ -2178,17 +2183,30 @@
       if (!actionBar) continue;
       if (actionBar.querySelector('.' + BUTTON_CLASS)) continue;
 
-      // Walk up from the action bar to find the first ancestor containing a
-      // `.standard-markdown` element — that's the AI response body in current Claude.
+      // Walk up from the action bar to find the smallest ancestor containing a
+      // `.standard-markdown` element — that's the AI response body in current
+      // Claude. Bounded to 6 levels (not a generous 10) to reduce the chance
+      // of overshooting into an adjacent turn's response.
       let responseContainer = actionBar.parentElement;
-      for (let i = 0; i < 10 && responseContainer && responseContainer !== document.body; i++) {
+      for (let i = 0; i < 6 && responseContainer && responseContainer !== document.body; i++) {
         if (responseContainer.querySelector('.standard-markdown')) break;
         responseContainer = responseContainer.parentElement;
       }
       if (!responseContainer || responseContainer === document.body) continue;
+      const markdownEl = responseContainer.querySelector('.standard-markdown');
+      if (!markdownEl) continue;
 
-      // Skip user message containers
+      // Skip user message containers (class-name check — kept as one signal,
+      // but Claude has renamed this class before, so it's not trusted alone).
       if (responseContainer.querySelector('[class*="font-user-message"]')) continue;
+
+      // Structural, class-name-independent safety net: the assistant's own
+      // Copy button cannot precede its own response body in document order.
+      // If this copyBtn comes BEFORE markdownEl, the walk above almost
+      // certainly overshot from a user message's own Copy button into the
+      // *next* turn's response — e.g. the user's question got an export
+      // button too, right alongside the real one on Claude's reply.
+      if (markdownEl.compareDocumentPosition(copyBtn) & Node.DOCUMENT_POSITION_PRECEDING) continue;
 
       // Click handler runs against the response prose itself.
       const contentEl =

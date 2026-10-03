@@ -383,6 +383,16 @@
   flex-shrink: 0;
   border-bottom: 1px solid var(--p-divider);
 }
+/* Chips scroll in their own short strip so up to 8 entries don't push the
+   rest of the panel down — label above stays fixed. ~4 rows visible, 5th
+   partially cut off as a scroll hint. */
+.cgd-recent-chips-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 100px;
+  overflow-y: auto;
+}
 .cgd-recent-label {
   font-size: 10px;
   font-weight: 600;
