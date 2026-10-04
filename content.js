@@ -2470,7 +2470,17 @@
           const range = sel.getRangeAt(0);
           const rect = range.getBoundingClientRect();
           selBtn.style.left = `${Math.max(8, rect.left)}px`;
-          selBtn.style.top = `${rect.top - 40}px`;
+          // Prefer floating above the selection; a fixed 40px offset can land
+          // on top of the selected text itself when there isn't enough room
+          // above (near the top of the viewport, or tight paragraph spacing
+          // on a multi-line selection) — flip below instead when that happens,
+          // the same collision-avoidance pattern selection toolbars use.
+          const btnHeight = 36;
+          if (rect.top >= btnHeight + 8) {
+            selBtn.style.top = `${rect.top - btnHeight - 4}px`;
+          } else {
+            selBtn.style.top = `${rect.bottom + 8}px`;
+          }
           selBtn.style.display = 'flex';
 
           mainPart.onclick = (e) => {

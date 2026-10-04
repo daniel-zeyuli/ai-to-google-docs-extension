@@ -519,6 +519,16 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 
 ---
 
+### BUG-044: Text-selection floating "Export" button overlaps the selected text
+**Date:** 2026-10-04
+**Symptom:** Maintainer screenshot (Claude, multi-line text selection): the floating "→ Append to..." button that appears on text selection rendered directly on top of the selected paragraph instead of floating above it, obscuring the text.
+**Root cause:** The button's vertical position was a fixed `rect.top - 40px` offset with no check for whether there was actually room above the selection. On a selection whose top edge sits close to the top of the viewport or close to preceding text (tight paragraph spacing), subtracting 40px can land inside that preceding content instead of in clear space.
+**Fix:** Added a collision check: if there's at least `button height + 8px` of room above the selection, float above as before; otherwise flip to below the selection (`rect.bottom + 8px`) — the same pattern selection toolbars (Google Docs, Medium highlight menu) use.
+**Verification:** Not live-tested — found from a screenshot, not reproduced interactively this session.
+**Related files:** `content.js` (the `mouseup` listener building the floating selection button).
+
+---
+
 ## v4.3 planned features
 
 ### High priority
