@@ -235,6 +235,13 @@ Walk through this file after any non-trivial change. Be honest: if you didn't ru
 - **BUG-015** (panel closes after picker Select): Step B5, click Select. Panel must STAY OPEN.
 - **BUG-016** (chip dedup): Step B7.
 - **BUG-017** (hierarchical picker): Step B5.
+- **BUG-042** (Claude: export button also under the user's own message): Ask Claude a question. Check the **user's own message** — it must have NO export button. Only Claude's reply gets one.
+- **BUG-043 / DeepSeek+Perplexity equivalent** (Export Full Conversation silently drops questions): Step B3, but on Claude/DeepSeek/Perplexity specifically. The doc must contain a "You:" section for every question. If you instead see a "⚠️ Notice" section saying your messages couldn't be detected, that's the fallback firing — report it, since it means the underlying selector needs fixing, not that the fallback is broken.
+- **BUG-044** (floating selection button overlaps selected text): Select a multi-line paragraph near the top of the viewport on any supported platform. The floating "→ Append to…" button must appear in clear space (above or below the selection), never on top of the highlighted text.
+- **BUG-045** (ChatGPT: Export Full Conversation was completely broken): Step B3 on ChatGPT specifically. Must NOT show "❌ No conversation content found". Doc must contain both your questions ("You:") and ChatGPT's replies, in the right order. **Highest priority regression to verify this round** — this was a confirmed total failure, not a hypothesis.
+- **Recent-docs scroll** (append-to-recent list expansion): Export to Drive 5+ times in different documents to build up history, then open the panel. The "Append to recent" list must show more than 2 entries (up to 8) and scroll inside its own short strip — not grow the whole panel taller, not squeeze each row narrower.
+- **Context menu scoping**: Select text on a non-AI site (e.g. wikipedia.org) and right-click. "Export to Docs" must NOT appear there. Select text on any of the 5 supported platforms and right-click — it must appear.
+- **CHATGPT-001** (not fixed, needs data): Generate an image with ChatGPT (DALL-E). Check whether an export button appears on that response at all. If not (expected per this gap), right-click the image response's download/regenerate icon → Inspect → Copy outerHTML, and hand that over to continue the fix.
 
 ---
 
