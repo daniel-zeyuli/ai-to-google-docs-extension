@@ -952,12 +952,25 @@
     const turns = [];
 
     if (isChatGPT) {
-      const allMsgs = document.querySelectorAll('[data-message-author-role]');
-      for (const msg of allMsgs) {
-        const role = msg.getAttribute('data-message-author-role');
-        const contentEl = role === 'assistant' ? (msg.querySelector('.markdown') || msg.querySelector('[class*="markdown"]') || msg.querySelector('article') || msg) : msg;
-        const text = extractMarkdown(contentEl).trim();
-        if (text) turns.push({ role: role === 'user' ? 'You' : 'ChatGPT', text });
+      // ChatGPT's Sept 2026 redesign (BUG-033) removed data-message-author-role
+      // entirely — the old `querySelectorAll('[data-message-author-role]')`
+      // this branch used returned nothing, so Export Full Conversation
+      // silently produced an empty document on the current DOM (BUG-045).
+      const aiEls = _chatGPTFindResponses();
+      const userEls = _chatGPTFindUserMessages();
+      if (userEls.length === 0 && aiEls.length > 0) {
+        turns.push({
+          role: '⚠️ Notice',
+          text: "This export is missing your own messages — only ChatGPT's responses could be detected on this version of the page. If you see this, please report it so the selector can be fixed."
+        });
+      }
+      const all = [
+        ...userEls.map(el => ({ el, role: 'You' })),
+        ...aiEls.map(el => ({ el, role: 'ChatGPT' }))
+      ].sort((a, b) => a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+      for (const { el, role } of all) {
+        const text = extractMarkdown(el).trim();
+        if (text) turns.push({ role, text });
       }
     } else if (isGemini) {
       // User queries: query the top-level custom element directly to avoid
@@ -1005,6 +1018,15 @@
       const userEls = Array.from(document.querySelectorAll('[class*="user-message"], [class*="human-message"]'))
         .filter(el => !el.parentElement?.closest('[class*="user-message"], [class*="human-message"]'));
       const aiEls = _deepSeekFindResponses();
+      // Same defensive check as Claude's branch (BUG-043) — class-based user
+      // selectors can go stale across redesigns; fail loudly in the export
+      // rather than silently dropping every question.
+      if (userEls.length === 0 && aiEls.length > 0) {
+        turns.push({
+          role: '⚠️ Notice',
+          text: "This export is missing your own messages — only DeepSeek's responses could be detected on this version of the page. If you see this, please report it so the selector can be fixed."
+        });
+      }
       const all = [
         ...userEls.map(el => ({ el, role: 'You' })),
         ...aiEls.map(el => ({ el, role: 'DeepSeek' }))
@@ -1017,6 +1039,12 @@
       const userEls = Array.from(document.querySelectorAll('[class*="user"], [data-testid*="user"]'))
         .filter(el => !el.parentElement?.closest('[class*="user"], [data-testid*="user"]'));
       const aiEls = _perplexityFindResponses();
+      if (userEls.length === 0 && aiEls.length > 0) {
+        turns.push({
+          role: '⚠️ Notice',
+          text: "This export is missing your own messages — only Perplexity's responses could be detected on this version of the page. If you see this, please report it so the selector can be fixed."
+        });
+      }
       const all = [
         ...userEls.map(el => ({ el, role: 'You' })),
         ...aiEls.map(el => ({ el, role: 'Perplexity' }))
@@ -1167,7 +1195,7 @@
   }
 
   function getAllUserMessages() {
-    if (isChatGPT) return Array.from(document.querySelectorAll('[data-message-author-role="user"]'));
+    if (isChatGPT) return _chatGPTFindUserMessages();
     if (isClaude)  return Array.from(document.querySelectorAll('[class*="font-user-message"]'))
                      .filter(el => !el.parentElement?.closest('[class*="font-user-message"]'));
     if (isGemini)  {
@@ -1710,6 +1738,25 @@
     if (modern.length) return modern;
     return Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'))
       .map(el => el.querySelector('.markdown') || el.querySelector('[class*="markdown"]') || el.querySelector('article') || el);
+  }
+
+  // User-turn counterpart to _chatGPTFindResponses (BUG-045). Legacy
+  // data-message-author-role="user" first; if that's gone too, a best-effort
+  // guess mirroring the confirmed assistant landmark
+  // h4[data-conversation-role="assistant"] — likely a symmetric
+  // h4[data-conversation-role="user"] exists for user turns. That landmark is
+  // sr-only (no visible content of its own), so walk up from it to the
+  // nearest ancestor with more text than the landmark itself.
+  function _chatGPTFindUserMessages() {
+    const legacy = Array.from(document.querySelectorAll('[data-message-author-role="user"]'));
+    if (legacy.length) return legacy;
+    return Array.from(document.querySelectorAll('h4[data-conversation-role="user"]')).map(h4 => {
+      let p = h4.parentElement;
+      for (let i = 0; i < 4 && p; i++, p = p.parentElement) {
+        if ((p.textContent || '').trim().length > (h4.textContent || '').trim().length) return p;
+      }
+      return h4.parentElement;
+    }).filter(Boolean);
   }
 
   // With data-testid gone, `.closest('[data-testid^="conversation-turn"]')` no

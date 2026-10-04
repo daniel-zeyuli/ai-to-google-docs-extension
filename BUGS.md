@@ -529,6 +529,23 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 
 ---
 
+### BUG-045: "Export Full Conversation" on ChatGPT was completely broken (confirmed, not hypothetical)
+**Date:** 2026-10-04
+**Severity:** High — confirmed via code read, not a hypothesis like BUG-043's DeepSeek/Perplexity notices.
+**Symptom (not yet live-confirmed, but logically certain given BUG-033):** Clicking "Export Full Conversation" on ChatGPT would show "❌ No conversation content found" and export nothing.
+**Root cause:** `exportFullConversation`'s ChatGPT branch was never updated during the BUG-033 emergency response — it still called `document.querySelectorAll('[data-message-author-role]')` directly instead of going through `_chatGPTFindResponses()`. Since BUG-033 confirmed this attribute no longer exists anywhere on the page, this query always returned zero elements, `turns` stayed empty, and the function hit its own "no content found" early-return. The button-injection and Last/Pick-mode code paths were fixed at the time (they already routed through `_chatGPTFindResponses()`/`getAllAIMessages()`); this one direct, unrouted query was missed.
+**Fix:** Added `_chatGPTFindUserMessages()` (counterpart to `_chatGPTFindResponses()`): tries the legacy `data-message-author-role="user"` attribute first, then falls back to a best-effort guess — `h4[data-conversation-role="user"]`, hypothesized to mirror the confirmed assistant landmark `h4[data-conversation-role="assistant"]` found during BUG-033's live diagnostics (unconfirmed live, since no further DOM access was available this session). That landmark is `sr-only`, so the function walks up from it to the nearest ancestor with more text than the landmark itself. `exportFullConversation`'s ChatGPT branch now uses this plus `_chatGPTFindResponses()`, with BUG-043's "⚠️ Notice" fallback if the user-side guess also comes up empty. `getAllUserMessages`'s ChatGPT branch (previously the same bare `data-message-author-role="user"` query) now calls the same shared helper instead of duplicating the logic.
+**Verification:** Not live-tested. The assistant side is confirmed solid (same selector verified working for buttons/Last/Pick since BUG-033). The user-message selector is an educated guess; if wrong, the "⚠️ Notice" fallback means the export still succeeds with ChatGPT's replies rather than failing outright — a clear improvement over the current total failure either way.
+**Related files:** `content.js` (`exportFullConversation`, `getAllUserMessages`, new `_chatGPTFindUserMessages`).
+
+### IMPROVEMENT: Same defensive "⚠️ Notice" pattern applied to DeepSeek and Perplexity exports
+**Date:** 2026-10-04
+**What:** `exportFullConversation`'s DeepSeek and Perplexity branches use class-based selectors (`[class*="user-message"]`, `[class*="user"]`) to find user turns — the same fragile-class-name risk as BUG-043 on Claude. Added the identical "if zero user turns but AI turns exist, insert a notice instead of silently omitting questions" check to both, for consistency.
+**Verification:** Not live-tested — same unconfirmed-hypothesis caveat as BUG-043.
+**Related files:** `content.js` (`exportFullConversation`).
+
+---
+
 ## v4.3 planned features
 
 ### High priority
