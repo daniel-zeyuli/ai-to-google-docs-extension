@@ -6,6 +6,14 @@ Items logged here instead of fixing inline. Each entry: date, file:line, observa
 
 ## Pending Bugs (confirmed, needs fix in future version)
 
+### CHATGPT-001 — DALL-E/image-generation responses likely have no export button at all (post-BUG-033 DOM)
+**Date:** 2026-10-04
+**Status:** Confirmed broken by code read, NOT fixed — no live DOM data to fix it from.
+**Root cause:** `addChatGPTButtons`'s dedicated pass for image-generation turns (`document.querySelectorAll('[data-testid="good-image-turn-action-button"]')`) and the catch-all third pass are both still keyed entirely off `data-testid`/`data-message-author-role`, which BUG-033 confirmed ChatGPT removed site-wide. Both passes now query against attributes that don't exist, so they silently process zero turns. Text responses are unaffected (fixed via `_chatGPTFindResponses()` in BUG-033/045), but a response that's *just* a generated image, with no markdown text, likely gets no button injected by any pass.
+**Why not fixed now:** Every other post-BUG-033 fix this session had an anchor to reason from — a landmark found in live diagnostics (`turn-action-controls`, `data-markdown-text-style`, the `h4[data-conversation-role]` symmetry guess). There is no equivalent for the image-generation case; nobody has inspected the live DOM of a ChatGPT image response since the redesign. Guessing a selector with zero anchor risks writing something confidently wrong rather than admitting the gap.
+**Next step:** Generate an image with ChatGPT, inspect the response's action bar (right-click the download/regenerate button → Inspect → Copy outerHTML, same method that worked for BUG-033/036), and hand that over before attempting a fix.
+**Related files:** `content.js` (`addChatGPTButtons` — "Second pass: DALL-E" and "Third pass: catch-all").
+
 ### IMAGE-001 — Claude image search results: third-party images export as URL references, not embedded
 **Date:** 2026-05-13
 **Updated:** 2026-05-14 (v4.2.0)
