@@ -878,7 +878,7 @@
           chrome.storage.local.get('globalRecentDocs', (gd) => {
             const global = Array.isArray(gd.globalRecentDocs) ? gd.globalRecentDocs : [];
             const gFiltered = global.filter(e => e.fileId !== newEntry.fileId && e.fileName !== newEntry.fileName);
-            chrome.storage.local.set({ globalRecentDocs: [newEntry, ...gFiltered].slice(0, 5) });
+            chrome.storage.local.set({ globalRecentDocs: [newEntry, ...gFiltered].slice(0, 8) });
           });
         });
 

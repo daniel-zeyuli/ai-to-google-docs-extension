@@ -546,6 +546,27 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 
 ---
 
+### BUG-046: Recent-docs scroll fix showed up to 8 in the UI, but the underlying storage still capped at 5
+**Date:** 2026-10-05
+**Symptom:** Maintainer live-tested the BUG-042-era "scrollable recents" fix: created 6+ exports across different conversations, but the panel never showed more than 5, and no scrollbar ever appeared.
+**Root cause:** The UI-side `.slice(0, 8)` (content.js, the panel's `recents` computation) was never the bottleneck — `globalRecentDocs` itself was persisted with a hard `.slice(0, 5)` at the point it's *saved* to `chrome.storage.local`. When exports happen across different conversations (so each conversation's own `lastExports` history contributes little), almost all of the panel's "recent" list comes from this shared, 5-capped array — so the UI could never have more than 5 to display no matter how high its own slice limit was raised.
+**Fix:** Raised the storage-side cap to `.slice(0, 8)` to match the UI's actual display capacity. Updated `CLAUDE.md`'s storage schema table (§ 2.6) accordingly.
+**Verification:** Not re-tested after this fix — needs re-confirmation with 6+ exports across different conversations.
+**Related files:** `content.js` (the `globalRecentDocs` save path), `CLAUDE.md` (§ 2.6).
+
+---
+
+### BUG-047: Unrecognized LaTeX commands (e.g. `\boxed{}`) render as garbled text in exported Word/Docs math
+**Date:** 2026-10-05
+**Symptom:** Maintainer screenshot: ChatGPT's `\boxed{3390}` (boxing a final numeric answer, a common LaTeX convention) exported as literal text "boxed3,390" with no box, directly adjacent with no space. A chemistry formula wrapped in `\boxed{}` showed the same class of corruption.
+**Root cause:** `converter.js`'s LaTeX parser (`parseAtom`) has no case for `\boxed`. Its final fallback for any unrecognized command returns `{type:'text', value: cmd.substring(1)}` — i.e. the command name literally, as text — and critically does **not** consume the command's `{...}` argument. The argument then gets parsed as a separate, subsequent expression by the caller's loop, producing two adjacent text nodes with no separator: the bare command name immediately followed by its argument's content.
+**Fix:** Added a dedicated case: `\boxed` now produces a `{type:'borderbox', content: parseGroup()}` AST node, rendered via a new `astToOmml` case using Office Math ML's `<m:borderBox>` element — the same structural pattern (`*Pr` properties child + `<m:e>` content child) already used by the existing, working `accent`/`radical` cases in this file. Purely additive — no existing case or fallback behavior was changed.
+**Verification:** Syntax-checked only (`node --check converter.js`). **Not verified to actually render a box in Word or Google Docs** — this session has no way to open a produced `.docx` and visually confirm OOXML rendering. If the box doesn't render as expected, the AST/OMML mapping needs rechecking against a real Office Math ML reference, not another guess.
+**Lesson:** `converter.js`'s "unrecognized command" fallback silently drops a fallthrough path that regularly produces wrong, glued-together output rather than something merely incomplete — any *other* unhandled LaTeX wrapper command (one that takes a `{...}` argument) will hit the exact same failure mode. `\boxed` was fixed because it was reported; the fallback itself is still structurally the same trap for the next one.
+**Related files:** `converter.js` (`parseAtom`, `astToOmml`).
+
+---
+
 ## v4.3 planned features
 
 ### High priority

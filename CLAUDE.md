@@ -59,7 +59,7 @@ These are not style preferences. Each one was learned the hard way — see `BUGS
 ```
 ExportEntry: { fileName, url, fileId, exportedAt? }   // exportedAt = ms; absent on legacy entries — handle gracefully
 lastExports:        { [hostname+pathname]: ExportEntry[] }   // ≤ 3 per conversation
-globalRecentDocs:   ExportEntry[]                            // ≤ 5 globally
+globalRecentDocs:   ExportEntry[]                            // ≤ 8 globally (raised from 5 — the append-to-recent UI shows up to 8)
 exportDest:         'drive' | 'local' | 'markdown' | 'notion' | 'obsidian'  // v4.4
 notionToken:        string (user's Notion integration token, stored as-is)
 notionParentPageId: string (UUID format, normalized on save in popup.js)

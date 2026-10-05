@@ -99,6 +99,7 @@ function parseLatex(tokens) {
       if (cmd==='\\underbrace'||cmd==='\\overbrace') return {type:'group',children:[parseGroup()]};
       if (FUNCS.includes(cmd)) return {type:'funcname',value:cmd.substring(1)};
       if (cmd==='\\binom'){const n=parseGroup(),k=parseGroup();return{type:'group',children:[{type:'text',value:'('},{type:'fraction',numerator:n,denominator:k},{type:'text',value:')'}]};}
+      if (cmd==='\\boxed') return {type:'borderbox',content:parseGroup()};
       return {type:'text',value:cmd.substring(1)};
     }
     if (t.type==='TEXT'){advance();return{type:'text',value:t.value};}
@@ -133,6 +134,7 @@ function astToOmml(node) {
     case'subsup':return`<m:sSubSup><m:sSubSupPr/><m:e>${astToOmml(node.base)}</m:e><m:sub>${astToOmml(node.subscript)}</m:sub><m:sup>${astToOmml(node.superscript)}</m:sup></m:sSubSup>`;
     case'radical':if(node.degree)return`<m:rad><m:radPr/><m:deg>${astToOmml({type:'text',value:node.degree})}</m:deg><m:e>${astToOmml(node.content)}</m:e></m:rad>`;return`<m:rad><m:radPr><m:degHide m:val="1"/></m:radPr><m:deg/><m:e>${astToOmml(node.content)}</m:e></m:rad>`;
     case'accent':return`<m:acc><m:accPr><m:chr m:val="${escapeXml(node.accent)}"/></m:accPr><m:e>${astToOmml(node.content)}</m:e></m:acc>`;
+    case'borderbox':return`<m:borderBox><m:borderBoxPr><m:ctrlPr/></m:borderBoxPr><m:e>${astToOmml(node.content)}</m:e></m:borderBox>`;
     case'matrix':{
       const DELIMS={pmatrix:['(',')'],bmatrix:['[',']'],vmatrix:['|','|'],Vmatrix:['\u2016','\u2016'],Bmatrix:['{','}'],cases:['{','']};
       const colCount=Math.max(1,...node.rows.map(r=>r.length));
