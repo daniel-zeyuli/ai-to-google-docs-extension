@@ -556,14 +556,18 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 
 ---
 
-### BUG-047: Unrecognized LaTeX commands (e.g. `\boxed{}`) render as garbled text in exported Word/Docs math
+### BUG-047: Chemistry/math formulas with `\mathrm{}` + subscripts truncated or garbled in exported Word/Docs math
 **Date:** 2026-10-05
-**Symptom:** Maintainer screenshot: ChatGPT's `\boxed{3390}` (boxing a final numeric answer, a common LaTeX convention) exported as literal text "boxed3,390" with no box, directly adjacent with no space. A chemistry formula wrapped in `\boxed{}` showed the same class of corruption.
-**Root cause:** `converter.js`'s LaTeX parser (`parseAtom`) has no case for `\boxed`. Its final fallback for any unrecognized command returns `{type:'text', value: cmd.substring(1)}` — i.e. the command name literally, as text — and critically does **not** consume the command's `{...}` argument. The argument then gets parsed as a separate, subsequent expression by the caller's loop, producing two adjacent text nodes with no separator: the bare command name immediately followed by its argument's content.
-**Fix:** Added a dedicated case: `\boxed` now produces a `{type:'borderbox', content: parseGroup()}` AST node, rendered via a new `astToOmml` case using Office Math ML's `<m:borderBox>` element — the same structural pattern (`*Pr` properties child + `<m:e>` content child) already used by the existing, working `accent`/`radical` cases in this file. Purely additive — no existing case or fallback behavior was changed.
-**Verification:** Syntax-checked only (`node --check converter.js`). **Not verified to actually render a box in Word or Google Docs** — this session has no way to open a produced `.docx` and visually confirm OOXML rendering. If the box doesn't render as expected, the AST/OMML mapping needs rechecking against a real Office Math ML reference, not another guess.
-**Lesson:** `converter.js`'s "unrecognized command" fallback silently drops a fallthrough path that regularly produces wrong, glued-together output rather than something merely incomplete — any *other* unhandled LaTeX wrapper command (one that takes a `{...}` argument) will hit the exact same failure mode. `\boxed` was fixed because it was reported; the fallback itself is still structurally the same trap for the next one.
-**Related files:** `converter.js` (`parseAtom`, `astToOmml`).
+**Symptom:** Multiple reports across sessions: `\boxed{3390}` exported as literal text "boxed3,390"; `H_2SO_4` exported as just "S"; `\boxed{\mathrm{Ca(OH)_2}}` exported as "Ca(OH" (truncated at the first subscript). All chemistry-formula exports losing either content or the visual subscript.
+**Root cause (two layered bugs, found incrementally):**
+1. `converter.js`'s LaTeX parser (`parseAtom`) had no case for `\boxed`. Its fallback for any unrecognized command returned the command name as literal text without consuming the `{...}` argument, producing two glued-together text nodes (the "boxed3,390" symptom).
+2. Deeper bug, found after fixing (1): `\mathrm{}`/`\text{}`/`\textbf{}`/`\mathbf{}` content was rendered via a `flattenText()` helper that only handled `text` and `group` AST node types. Any `subscript`/`superscript`/`subsup` node inside (i.e. any digit after `_`, which is every chemistry formula) hit no matching branch and silently flattened to an empty string — dropping that part of the formula entirely. This is why `H_2SO_4` → "S" and `Ca(OH)_2` → "Ca(OH" (truncated exactly at the subscript).
+**Fix:**
+1. Added a dedicated `\boxed` → `{type:'borderbox', ...}` AST case, rendered via Office Math ML's `<m:borderBox>` element (verified against Microsoft's OOXML schema docs — valid element, correct child structure).
+2. Replaced `flattenText()` + single-text-run rendering in the `textmode` case with a new `astToOmmlStyled(node, sty)` renderer that recursively walks the AST and emits real `<m:sSub>`/`<m:sSup>`/`<m:sSubSup>` structural elements (not flattened text) for any subscript/superscript inside `\mathrm`/`\text`/etc., with each leaf text run styled plain/bold via `sty`. This preserves actual visual subscript rendering instead of concatenating everything into flat text.
+**Verification:** Live-tested by user in ChatGPT across multiple iterations — confirmed fixed for both `Ca(OH)_2` (previously truncated) and `H_2SO_4` (previously collapsed to "S"), both now exporting complete with correct visual subscripts. User confirmed: "Success now this bug is solved."
+**Lesson:** The first fix (boxed) was correct but incomplete — it addressed the reported symptom without noticing the shared, deeper bug in `flattenText()` that affected *any* subscript inside text-mode content, not just `\boxed`. When a "fixed" bug resurfaces with a different-looking symptom (truncation instead of gluing), re-trace the actual AST through the renderer rather than assuming the new report is unrelated.
+**Related files:** `converter.js` (`parseAtom`, `astToOmml`, `astToOmmlStyled`).
 
 ---
 

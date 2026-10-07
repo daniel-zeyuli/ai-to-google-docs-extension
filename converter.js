@@ -119,14 +119,24 @@ function parseLatex(tokens) {
 }
 
 function escapeXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function flattenText(n){if(!n)return'';if(n.type==='text')return n.value||'';if(n.type==='group')return(n.children||[]).map(flattenText).join('');return'';}
+function astToOmmlStyled(n,sty){
+  if(!n)return'<m:r><m:t></m:t></m:r>';
+  switch(n.type){
+    case'text':return`<m:r><m:rPr><m:sty m:val="${sty}"/></m:rPr><m:t>${escapeXml(n.value||'')}</m:t></m:r>`;
+    case'group':return(n.children||[]).map(c=>astToOmmlStyled(c,sty)).join('');
+    case'subscript':return`<m:sSub><m:sSubPr/><m:e>${astToOmmlStyled(n.base,sty)}</m:e><m:sub>${astToOmmlStyled(n.subscript,sty)}</m:sub></m:sSub>`;
+    case'superscript':return`<m:sSup><m:sSupPr/><m:e>${astToOmmlStyled(n.base,sty)}</m:e><m:sup>${astToOmmlStyled(n.superscript,sty)}</m:sup></m:sSup>`;
+    case'subsup':return`<m:sSubSup><m:sSubSupPr/><m:e>${astToOmmlStyled(n.base,sty)}</m:e><m:sub>${astToOmmlStyled(n.subscript,sty)}</m:sub><m:sup>${astToOmmlStyled(n.superscript,sty)}</m:sup></m:sSubSup>`;
+    default:return astToOmml(n);
+  }
+}
 
 function astToOmml(node) {
   if(!node)return'<m:r><m:t></m:t></m:r>';
   switch(node.type){
     case'text':return`<m:r><m:t>${escapeXml(node.value||'')}</m:t></m:r>`;
     case'funcname':return`<m:r><m:rPr><m:sty m:val="p"/></m:rPr><m:t>${escapeXml(node.value)}</m:t></m:r>`;
-    case'textmode':{const sty=node.bold?'b':'p';return`<m:r><m:rPr><m:sty m:val="${sty}"/></m:rPr><m:t>${escapeXml(flattenText(node.content))}</m:t></m:r>`;}
+    case'textmode':return astToOmmlStyled(node.content,node.bold?'b':'p');
     case'group':return(node.children||[]).map(astToOmml).join('');
     case'fraction':return`<m:f><m:fPr><m:ctrlPr/></m:fPr><m:num>${astToOmml(node.numerator)}</m:num><m:den>${astToOmml(node.denominator)}</m:den></m:f>`;
     case'superscript':return`<m:sSup><m:sSupPr/><m:e>${astToOmml(node.base)}</m:e><m:sup>${astToOmml(node.superscript)}</m:sup></m:sSup>`;
