@@ -61,7 +61,7 @@ A technical map of the project. Read the section that matches the file you're ab
 3. **`showSelectPanel(messageEl)`** builds the right-side panel: destination row (Drive/Local), recent chips (from `lastExports[convKey]` + `globalRecentDocs`), Last/Full/Pick buttons, optional checkbox list of all responses.
 4. **User clicks Last (typical case).** `exportMessage(el)` → `extractMarkdown(el)` walks the DOM:
    - `processNode(node)` recurses, applying 6 math-extraction strategies (Gemini `data-math`, KaTeX wrappers, MathJax, `<math>` element, etc.) and emitting Markdown with `[[IMG:n]]` placeholders.
-   - `_captureImages()` runs canvas-based capture for any `<img>` with `naturalWidth`. CORS-blocked images fall back to `chrome.runtime.sendMessage({ action: 'fetchImage' })` → background fetches and re-encodes as PNG base64.
+   - `_captureImages()` runs canvas-based capture for any `<img>` with `naturalWidth`. CORS-blocked images fall back to `chrome.runtime.sendMessage({ action: 'fetchImage' })` → background fetches without cookies (to support wildcard CORS responses) and re-encodes as PNG base64.
 5. **`exportMarkdown(markdown, suffix, imageMap)`**:
    - Prepends a metadata header (`*Platform · YYYY-MM-DD · convTitle*\n*sourceUrl*`).
    - Calls `window.convertChatGPTToDocx(markdown, imageMap)` (in `converter.js`) → produces a `.docx` Blob with native OOXML math from LaTeX.

@@ -16,10 +16,11 @@ Items logged here instead of fixing inline. Each entry: date, file:line, observa
 
 ### IMAGE-001 — Claude image search results: third-party images export as URL references, not embedded
 **Date:** 2026-05-13
-**Updated:** 2026-05-14 (v4.2.0)
-**Status:** Partially fixed. Text description now exports correctly. Images from third-party domains (stockcake.com etc.) appear as `![alt](url)` markdown links in the export — CORS prevents direct embedding. Only images served from `anthropic.com` / `claude.ai` can be embedded.
-**Limitation:** External CDN images are CORS-blocked; cannot embed without server-side proxy (out of scope).
-**Files:** `content.js` (`extractMarkdown`)
+**Updated:** 2026-10-07 — real root cause found; maintainer deprioritized the fix
+**Status:** Won't-fix for now (maintainer call, low frequency). Text description exports correctly; the image itself falls back to the existing `(Image: url)` text reference (`content.js:711`) instead of being embedded.
+**Real root cause (confirmed 2026-10-07):** `_ensureImageFetchPermission()` (`content.js` ~line 181) calls `chrome.permissions.contains()`/`.request()` directly from a content script. Per Chrome's own docs, content scripts only have direct access to `chrome.dom`/`chrome.i18n`/`chrome.storage`/a subset of `chrome.runtime` — `chrome.permissions` is not among them, so the call throws and is silently swallowed by the surrounding try/catch, meaning the optional `https://*/*` permission is never actually granted. This only matters for images on domains NOT already in `host_permissions` — ChatGPT (`*.oaiusercontent.com`) and Gemini (`*.googleusercontent.com`) are already covered and unaffected; Claude/Perplexity frequently reference truly arbitrary third-party image domains that can't be pre-declared, so they're the ones that hit this path.
+**Why not fixed:** The only context where `chrome.permissions.request()` both exists AND satisfies Chrome's user-gesture requirement is a popup-page click handler (background.js has the API but loses the gesture across the async `sendMessage` hop — same class of issue as the project's existing service-worker lesson). Fixing this needs a dedicated "enable image export" button in `popup.html` plus a storage flag content.js checks before attempting the fetch. Maintainer assessed image-export frequency as low and chose to keep the current graceful text-link fallback rather than add that extra UI step.
+**Files:** `content.js` (`_ensureImageFetchPermission`, `_captureImages`, `extractMarkdown`), `popup.html`/`popup.js` (if revisited).
 
 ### IMAGE-002 — ChatGPT DALL-E image-only conversation: "no chats found" in panel / button detection still unreliable
 **Date:** 2026-05-13
@@ -32,6 +33,13 @@ Items logged here instead of fixing inline. Each entry: date, file:line, observa
 **Status:** RESOLVED — shipping in this release. `chat.deepseek.com` / `perplexity.ai` restored to `manifest.json` `content_scripts.matches` after a full bug-fix and live-verification cycle: BUG-027 (duplicate buttons), BUG-028 (localized/out-of-scope action bar detection), BUG-029 (DeepSeek panel outside-click), BUG-030/031 (button silently removed by host page re-renders), and BUG-032 (DeepSeek extraction root) were all found, fixed, and verified live by the maintainer. Button placement lands reliably on the right side of the response area on both platforms but is not pixel-aligned with the native action bar — maintainer has accepted this as good enough (see BUG-028's verification note).
 **Store disclosure:** Ship with a "beta" mention in the store listing's "What it does" and "What's new" sections per the original plan — do not add to the extension name or short summary; main platforms (ChatGPT, Gemini, Claude) stay front and center there.
 **Files:** `manifest.json`, `content.js`.
+
+### ADOBE-001 — Browser extension injected links (e.g. Adobe) get swept into the export
+**Date:** 2026-10-07
+**Status:** Not fixed — not even scoped yet.
+**Observation:** When the user has a third-party browser extension (reported: an Adobe extension) active on the AI chat page, that extension injects its own links/UI into the page DOM. `extractMarkdown`'s DOM walk doesn't distinguish these from the AI platform's own content, so they get swept into the export — one reported case ballooned a single response into an 11-page document full of unrelated links.
+**Why not fixed:** No generic way to distinguish "content injected by an unrelated browser extension" from legitimate page content without a specific DOM signature to anchor on (e.g. a known class/attribute the injecting extension uses). Maintainer considers this low priority / hard to generalize.
+**Next step (if revisited):** Get the specific extension name + a DOM inspection of the injected markup to find an anchor to filter on.
 
 ---
 

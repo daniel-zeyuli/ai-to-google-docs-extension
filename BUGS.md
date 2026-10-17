@@ -535,7 +535,7 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 **Symptom (not yet live-confirmed, but logically certain given BUG-033):** Clicking "Export Full Conversation" on ChatGPT would show "❌ No conversation content found" and export nothing.
 **Root cause:** `exportFullConversation`'s ChatGPT branch was never updated during the BUG-033 emergency response — it still called `document.querySelectorAll('[data-message-author-role]')` directly instead of going through `_chatGPTFindResponses()`. Since BUG-033 confirmed this attribute no longer exists anywhere on the page, this query always returned zero elements, `turns` stayed empty, and the function hit its own "no content found" early-return. The button-injection and Last/Pick-mode code paths were fixed at the time (they already routed through `_chatGPTFindResponses()`/`getAllAIMessages()`); this one direct, unrouted query was missed.
 **Fix:** Added `_chatGPTFindUserMessages()` (counterpart to `_chatGPTFindResponses()`): tries the legacy `data-message-author-role="user"` attribute first, then falls back to a best-effort guess — `h4[data-conversation-role="user"]`, hypothesized to mirror the confirmed assistant landmark `h4[data-conversation-role="assistant"]` found during BUG-033's live diagnostics (unconfirmed live, since no further DOM access was available this session). That landmark is `sr-only`, so the function walks up from it to the nearest ancestor with more text than the landmark itself. `exportFullConversation`'s ChatGPT branch now uses this plus `_chatGPTFindResponses()`, with BUG-043's "⚠️ Notice" fallback if the user-side guess also comes up empty. `getAllUserMessages`'s ChatGPT branch (previously the same bare `data-message-author-role="user"` query) now calls the same shared helper instead of duplicating the logic.
-**Verification:** Not live-tested. The assistant side is confirmed solid (same selector verified working for buttons/Last/Pick since BUG-033). The user-message selector is an educated guess; if wrong, the "⚠️ Notice" fallback means the export still succeeds with ChatGPT's replies rather than failing outright — a clear improvement over the current total failure either way.
+**Verification:** Maintainer reports a live full-conversation export now includes all content and ChatGPT responses. The prior user-message selector concern is resolved by that check. Response headings are now numbered in the Markdown assembly; that presentation change has not yet been live-checked.
 **Related files:** `content.js` (`exportFullConversation`, `getAllUserMessages`, new `_chatGPTFindUserMessages`).
 
 ### IMPROVEMENT: Same defensive "⚠️ Notice" pattern applied to DeepSeek and Perplexity exports
@@ -568,6 +568,25 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 **Verification:** Live-tested by user in ChatGPT across multiple iterations — confirmed fixed for both `Ca(OH)_2` (previously truncated) and `H_2SO_4` (previously collapsed to "S"), both now exporting complete with correct visual subscripts. User confirmed: "Success now this bug is solved."
 **Lesson:** The first fix (boxed) was correct but incomplete — it addressed the reported symptom without noticing the shared, deeper bug in `flattenText()` that affected *any* subscript inside text-mode content, not just `\boxed`. When a "fixed" bug resurfaces with a different-looking symptom (truncation instead of gluing), re-trace the actual AST through the renderer rather than assuming the new report is unrelated.
 **Related files:** `converter.js` (`parseAtom`, `astToOmml`, `astToOmmlStyled`).
+
+---
+
+### BUG-048: Recent exports expanded the panel instead of scrolling; public image capture hit credentialed CORS
+**Date:** 2026-10-07
+**Symptoms:** The "Append to recent" section displayed all eight recent exports as stacked rows, taking space from the rest of the panel. Separately, image capture logged a CORS error for `persistent.oaistatic.com/.../plant_example.png`: the CDN returned wildcard `Access-Control-Allow-Origin`, which cannot be used for a request that includes credentials.
+**Root causes:** The recent list used only `max-height` inside nested flex containers, leaving its scroll area's flex sizing unconstrained. The background image fallback sent cookies for every external image request with `credentials: 'include'`.
+**Fix:** Bound the recent list to a 100px maximum with internal scrolling and keep each row at its natural height. BUG-049 further sizes the strip to the number of rows when fewer than four are present. Change background image fetches to `credentials: 'omit'`, which allows public wildcard-CORS image responses.
+**Verification:** Not browser-tested in this session. The reported CORS request is from this background fetch path, and the updated fetch mode removes the credentials condition that made wildcard CORS invalid. Public images are expected to continue embedding; cookie-protected image URLs may now fall back to the existing `[Image]` placeholder.
+**Related files:** `styles.css` (`.cgd-recent-chips-scroll`, `.cgd-recent-chip`), `background.js` (`fetchImageAsBase64`), `ARCH.md`.
+
+---
+
+### BUG-049: Recent-doc strip reserved space for four rows when only one document was available
+**Date:** 2026-10-07
+**Symptom:** With one recent document, the append-to-recent area still occupied the full 100px strip, leaving a large blank gap before the response picker.
+**Fix:** Size the strip to its row count up to four rows, then cap it at 100px and scroll overflow. Give each chip a fixed 24px row height so the calculated strip height matches its contents.
+**Verification:** Not browser-tested. The layout calculation yields one row of 24px plus the label when one recent document exists, and caps at 99px for four or more rows.
+**Related files:** `content.js` (`buildRecentChips`), `styles.css` (`.cgd-recent-chips-scroll`, `.cgd-recent-chip`).
 
 ---
 

@@ -145,7 +145,10 @@ function removeCachedToken(token) {
 // ── Fetch image via background worker (bypasses content script CORS) ──
 async function fetchImageAsBase64(url) {
   try {
-    const resp = await fetch(url, { credentials: 'include' });
+    // Most AI-generated/external images are public and some CDNs return
+    // Access-Control-Allow-Origin: *. Wildcard CORS cannot be used with
+    // credentialed requests, so do not send cookies on this extension fetch.
+    const resp = await fetch(url, { credentials: 'omit' });
     if (!resp.ok) return { success: false };
     const blob = await resp.blob();
     const bitmap = await createImageBitmap(blob);

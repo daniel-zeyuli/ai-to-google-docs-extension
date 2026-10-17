@@ -1060,7 +1060,14 @@
       return;
     }
 
-    const markdown = turns.map(t => `## ${t.role}\n\n${t.text}`).join('\n\n---\n\n');
+    let responseNumber = 0;
+    const markdown = turns.map(t => {
+      const isAssistantResponse = t.role !== 'You' && t.role !== '⚠️ Notice';
+      const heading = isAssistantResponse
+        ? `${t.role} — Response ${++responseNumber}`
+        : t.role;
+      return `## ${heading}\n\n${t.text}`;
+    }).join('\n\n---\n\n');
     const imageMap = await _captureImages();
     await exportMarkdown(markdown, '_full', imageMap);
   }
@@ -1412,6 +1419,8 @@
       // so showing up to 8 entries doesn't push the rest of the panel down.
       const chipsScroll = document.createElement('div');
       chipsScroll.className = 'cgd-recent-chips-scroll';
+      const visibleRows = Math.min(recents.length, 4);
+      chipsScroll.style.height = `${visibleRows * 24 + visibleRows - 1}px`;
       recentRow.appendChild(chipsScroll);
       recents.forEach(exp => {
         const chip = document.createElement('div');

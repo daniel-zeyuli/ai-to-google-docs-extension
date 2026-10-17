@@ -383,14 +383,16 @@
   flex-shrink: 0;
   border-bottom: 1px solid var(--p-divider);
 }
-/* Chips scroll in their own short strip so up to 8 entries don't push the
-   rest of the panel down — label above stays fixed. ~4 rows visible, 5th
-   partially cut off as a scroll hint. */
+/* Chips use only the height they need, up to four rows; additional entries
+   scroll inside this strip while the label above stays fixed. */
 .cgd-recent-chips-scroll {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  height: auto;
   max-height: 100px;
+  min-height: 0;
+  flex: 0 1 auto;
   overflow-y: auto;
 }
 .cgd-recent-label {
@@ -403,6 +405,9 @@
 }
 .cgd-recent-chip {
   display: flex; align-items: center; gap: 5px;
+  box-sizing: border-box;
+  height: 24px;
+  flex: 0 0 24px;
   padding: 4px 6px; border-radius: 6px;
   font-size: 11px; color: var(--p-sub);
   cursor: pointer; transition: background 0.12s, border-color 0.12s;
