@@ -439,6 +439,29 @@ function parseFormattedSegments(text) {
   return segments;
 }
 
+// A "$" that starts a dollar amount ($110, $1,200.50, $5M, $20/hr) is text, not a math delimiter.
+// Math that begins with a number ($100$, $5x$, $1 - p$, $5 + 3$, $5 \times 3$) is deliberately not matched.
+function looksLikeCurrency(str, i) {
+  return /^(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s?(?:million|billion|trillion|thousand|bn|mm|k|m|b|t))?(?:$|\s+(?![-+=*\/^<>×÷·±−≤≥≠≈\\])|[;:!?)\]%]|[,.](?=\s|$)|\/[A-Za-z])/i
+    .test(str.substring(i + 1, i + 40));
+}
+
+// First single-$ inline math span. A dollar amount cannot sit inside inline math, so meeting one
+// while looking for the closing "$" means the opener was really text (e.g. "$110 - $120").
+function findSingleDollarMath(s) {
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] !== '$') continue;
+    if (s[i + 1] === '$') { i++; continue; }
+    if (looksLikeCurrency(s, i)) continue;
+    for (let j = i + 1; j < s.length; j++) {
+      if (s[j] !== '$' || s[j + 1] === '$') continue;
+      if (looksLikeCurrency(s, j)) break;
+      return { start: i, end: j };
+    }
+  }
+  return null;
+}
+
 // Extract math runs from text
 function extractMathRuns(text) {
   const runs = [];
@@ -448,13 +471,8 @@ function extractMathRuns(text) {
     let mathStart = -1, latex = '', matchLen = 0;
     
     let ddIdx = remaining.indexOf('$$');
-    let sdIdx = -1;
-    for (let i = 0; i < remaining.length; i++) {
-      if (remaining[i] === '$') {
-        if (i + 1 < remaining.length && remaining[i + 1] === '$') { i++; continue; }
-        sdIdx = i; break;
-      }
-    }
+    const sdMatch = findSingleDollarMath(remaining);
+    const sdIdx = sdMatch ? sdMatch.start : -1;
     let piIdx = remaining.indexOf('\\(');
     
     let bestIdx = Infinity, bestType = '';
@@ -466,13 +484,7 @@ function extractMathRuns(text) {
       const endIdx = remaining.indexOf('$$', ddIdx + 2);
       if (endIdx > ddIdx) { mathStart = ddIdx; latex = remaining.substring(ddIdx + 2, endIdx); matchLen = endIdx + 2 - ddIdx; }
     } else if (bestType === 'sd') {
-      let j = sdIdx + 1;
-      while (j < remaining.length) {
-        if (remaining[j] === '$' && (j + 1 >= remaining.length || remaining[j + 1] !== '$')) {
-          mathStart = sdIdx; latex = remaining.substring(sdIdx + 1, j); matchLen = j + 1 - sdIdx; break;
-        }
-        j++;
-      }
+      mathStart = sdIdx; latex = remaining.substring(sdIdx + 1, sdMatch.end); matchLen = sdMatch.end + 1 - sdIdx;
     } else if (bestType === 'pi') {
       const ci = remaining.indexOf('\\)', piIdx + 2);
       if (ci > piIdx) { mathStart = piIdx; latex = remaining.substring(piIdx + 2, ci); matchLen = ci + 2 - piIdx; }

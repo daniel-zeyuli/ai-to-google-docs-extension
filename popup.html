@@ -47,7 +47,7 @@
     /* ── Header ── */
     .header {
       display: flex; align-items: center; gap: 9px;
-      padding: 11px 12px 10px;
+      padding: 9px 12px 8px;
     }
     .header img { width: 24px; height: 24px; flex-shrink: 0; }
     .header-text { flex: 1; min-width: 0; }
@@ -63,19 +63,76 @@
 
     /* ── Section label ── */
     .section-label {
-      font-size: 10px; font-weight: 600; color: var(--faint);
+      font-size: 10px; font-weight: 600; color: var(--sub);
       letter-spacing: 0.5px; text-transform: uppercase;
       padding: 0 2px; margin-bottom: 5px;
     }
 
+    /* ── Page status ── */
+    .status { padding: 5px 12px 6px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--sub); }
+    .status-line { display: flex; align-items: flex-start; gap: 6px; }
+    .status-dot { width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; background: var(--faint); flex-shrink: 0; }
+    .status.ok .status-dot { background: #1a7f37; }
+    .status-report {
+      display: block; margin-top: 4px; padding: 0;
+      background: none; border: none; font-size: 11px;
+      color: var(--blue); cursor: pointer; text-align: left;
+    }
+    .status-report[hidden] { display: none; }
+    .status-report:hover { text-decoration: underline; }
+    .status-report:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+
+    /* ── How it works ── */
+    .howto { padding: 6px 12px 7px; border-bottom: 1px solid var(--border); }
+    .howto-list { list-style: none; counter-reset: step; }
+    .howto-list li {
+      counter-increment: step;
+      font-size: 11px; color: var(--sub); line-height: 1.35;
+      padding: 1px 0 1px 20px; position: relative;
+    }
+    .howto-list li::before {
+      content: counter(step);
+      position: absolute; left: 0; top: 1px;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--blue-bg); color: var(--blue);
+      font-size: 9px; font-weight: 700; text-align: center; line-height: 14px;
+    }
+
+    .citation-select {
+      width: 100%; padding: 5px 7px; font-size: 11px; color: var(--text);
+      background: var(--bg); border: 1px solid var(--faint); border-radius: 6px;
+      font-family: inherit;
+    }
+    .citation-select:focus { outline: none; border-color: var(--blue); }
+
+    /* ── More options (collapsed) ── */
+    .more { border-bottom: 1px solid var(--border); }
+    .more > summary {
+      cursor: pointer; list-style: none; padding: 7px 12px;
+      font-size: 10px; font-weight: 600; letter-spacing: 0.5px;
+      text-transform: uppercase; color: var(--sub); user-select: none;
+    }
+    .more > summary::-webkit-details-marker { display: none; }
+    .more > summary::after { content: ' ▾'; }
+    .more[open] > summary::after { content: ' ▴'; }
+    .more-body { padding: 0 12px 9px; }
+    .more-body .section-label { margin-top: 2px; }
+    .dest-checks { padding: 0 2px 8px; }
+    .dest-check {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; color: var(--sub); padding: 2px 0; cursor: pointer;
+    }
+    .dest-check input { margin: 0; }
+
     /* ── Save-to section ── */
-    .save-section { padding: 8px 10px 7px; border-bottom: 1px solid var(--border); }
+    .save-section { padding: 6px 10px 5px; border-bottom: 1px solid var(--border); }
     .save-opt {
       display: flex; align-items: center; gap: 8px;
-      padding: 6px 8px; border-radius: 8px;
+      padding: 4px 8px; border-radius: 8px;
       cursor: pointer; transition: background 0.12s;
-      margin-bottom: 2px; user-select: none;
+      margin-bottom: 1px; user-select: none;
     }
+    .save-opt:not(.active) .save-detail { display: none; }
     .save-opt:last-child { margin-bottom: 0; }
     .save-opt:hover { background: var(--bg2); }
     .save-opt.active { background: var(--blue-bg); }
@@ -99,31 +156,14 @@
     .save-opt.active .save-detail { color: var(--blue); opacity: 0.75; }
 
     /* ── Mode section ── */
-    .mode-section { padding: 8px 12px 9px; border-bottom: 1px solid var(--border); }
-    .mode-strip {
-      display: flex;
-      background: var(--btn-bg); border-radius: 9px; padding: 3px; gap: 0;
-    }
-    .mode-tab {
-      flex: 1; padding: 6px 2px; text-align: center;
-      background: none; border: none; border-radius: 7px;
-      font-size: 11px; font-weight: 500; color: var(--muted);
-      cursor: pointer; transition: all 0.15s; white-space: nowrap;
-    }
-    .mode-tab.active {
-      background: var(--bg); color: var(--blue);
-      box-shadow: var(--shadow);
-    }
-    .mode-hint {
-      font-size: 10px; color: var(--muted);
-      margin-top: 6px; padding: 0 2px; min-height: 13px;
-    }
+    .mode-section { padding: 6px 10px 5px; border-bottom: 1px solid var(--border); }
+    .mode-section .section-label { padding: 0 2px; }
 
     /* ── Shortcut section ── */
-    .shortcut-section { padding: 8px 10px 11px; }
+    .shortcut-section { padding: 6px 10px 7px; }
     .shortcut-row {
       display: flex; align-items: center;
-      justify-content: space-between; margin-top: 5px;
+      justify-content: space-between; margin-top: 3px;
     }
     kbd.shortcut-display {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
@@ -137,7 +177,7 @@
     }
     .shortcut-link:hover { text-decoration: underline; }
     .feedback-section {
-      padding: 4px 10px 10px;
+      padding: 2px 10px 8px;
       text-align: center;
     }
     .feedback-link {
@@ -175,7 +215,7 @@
     .notion-help:hover { text-decoration: underline; }
 
     .pro-section {
-      padding: 7px 10px 7px;
+      padding: 5px 10px 5px;
       border-top: 1px solid var(--border);
       text-align: center;
     }
@@ -206,10 +246,28 @@
     <div class="header-title" data-i18n="popupTitle">AI Chat Exporter</div>
     <div class="header-sub" data-i18n="popupSubtitle">for Google Docs</div>
   </div>
-  <span class="version-badge">4.4.0</span>
+  <span class="version-badge" id="version-badge"></span>
 </div>
 
 <hr>
+
+<!-- Status of the current tab -->
+<div class="status" id="page-status" hidden>
+  <div class="status-line">
+    <span class="status-dot"></span>
+    <span id="status-text"></span>
+  </div>
+  <button class="status-report" id="status-report" hidden data-i18n="statusReport">No Export button? Send report</button>
+</div>
+
+<!-- How it works -->
+<div class="howto">
+  <ol class="howto-list">
+    <li data-i18n="howStep1">Chat with any AI as usual</li>
+    <li data-i18n="howStep2">Click Export under any AI reply</li>
+    <li data-i18n="howStep3">Choose where to save</li>
+  </ol>
+</div>
 
 <!-- Save to -->
 <div class="save-section">
@@ -274,13 +332,28 @@
 
 <!-- Default mode -->
 <div class="mode-section">
-  <div class="section-label" data-i18n="defaultMode">Default mode</div>
-  <div class="mode-strip">
-    <button class="mode-tab" data-mode="last" data-i18n="modeLast">↩ Last</button>
-    <button class="mode-tab" data-mode="full" data-i18n="modeFull">≡ Full</button>
-    <button class="mode-tab" data-mode="select" data-i18n="modePick">☑ Pick</button>
+  <div class="section-label" data-i18n="modeLabel">When I click Export</div>
+  <div class="save-opt mode-opt" data-mode="select">
+    <span class="save-radio"></span>
+    <div class="save-info">
+      <span class="save-title" data-i18n="modePickTitle">Choose replies (recommended)</span>
+      <span class="save-detail" data-i18n="hintPick">Pick which replies to export</span>
+    </div>
   </div>
-  <div class="mode-hint" id="mode-hint"></div>
+  <div class="save-opt mode-opt" data-mode="last">
+    <span class="save-radio"></span>
+    <div class="save-info">
+      <span class="save-title" data-i18n="modeLastTitle">Last reply only</span>
+      <span class="save-detail" data-i18n="hintLast">Exports the latest AI reply instantly</span>
+    </div>
+  </div>
+  <div class="save-opt mode-opt" data-mode="full">
+    <span class="save-radio"></span>
+    <div class="save-info">
+      <span class="save-title" data-i18n="modeFullTitle">Whole conversation</span>
+      <span class="save-detail" data-i18n="hintFull">Exports every message in this chat</span>
+    </div>
+  </div>
 </div>
 
 <!-- Keyboard shortcut -->
@@ -291,6 +364,27 @@
     <button class="shortcut-link" id="shortcut-customize" data-i18n="customize">Customize →</button>
   </div>
 </div>
+
+<!-- More options (collapsed) -->
+<details class="more">
+  <summary data-i18n="moreOptions">Citation style &amp; destinations</summary>
+  <div class="more-body">
+    <div class="section-label" data-i18n="destCustomize">Show in export panel</div>
+    <div class="dest-checks" id="dest-checks">
+      <label class="dest-check"><input type="checkbox" data-dest-check="drive"> Google Drive</label>
+      <label class="dest-check"><input type="checkbox" data-dest-check="local"> Word (.docx)</label>
+      <label class="dest-check"><input type="checkbox" data-dest-check="markdown"> Markdown (.md)</label>
+      <label class="dest-check"><input type="checkbox" data-dest-check="notion"> Notion</label>
+      <label class="dest-check"><input type="checkbox" data-dest-check="obsidian"> Obsidian</label>
+    </div>
+    <div class="section-label" data-i18n="citationLabel">Citation line in exports</div>
+    <select class="citation-select" id="citation-select">
+      <option value="mla">MLA</option>
+      <option value="apa">APA</option>
+      <option value="none" data-i18n="citationNone">None</option>
+    </select>
+  </div>
+</details>
 
 <!-- Pro interest -->
 <div class="pro-section">

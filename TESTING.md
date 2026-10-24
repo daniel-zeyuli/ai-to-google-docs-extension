@@ -141,7 +141,7 @@ Walk through this file after any non-trivial change. Be honest: if you didn't ru
 - Default filename ends in `.md` (e.g. `Quadratic_Formula_Practice.md`).
 - Saved file opens cleanly in any text editor or Markdown viewer (Obsidian, Notion paste, VSCode, etc.).
 - File contents:
-  - Top: italic `*ChatGPT · YYYY-MM-DD · <conversation title>*` then italic `*Citation (MLA): ...*`
+  - Top: italic `*ChatGPT · YYYY-MM-DD · <conversation title>*` then the citation line per the popup setting (MLA by default, see B11.7)
   - Body: raw markdown (no `.docx` conversion).
   - **No** trailing citation block (citation now lives in the header).
 
@@ -169,20 +169,24 @@ Walk through this file after any non-trivial change. Be honest: if you didn't ru
 - Subfolder created twice → `_getOrCreateFolder` storage check is broken; verify it reads/writes the correct key.
 - 403 from Drive API on subfolder creation → `drive.file` scope shouldn't matter (extension created the parent), but if you're seeing this, try deleting the AI Chat Exports folder in Drive and re-exporting.
 
-### B11.7. Citation header (v4.0.0+)
+### B11.7. Citation header (v4.0.0+; style setting v4.5.0)
 
-**Setup:** Any platform.
+**Setup:** Any platform. Popup → "Citation line in exports" = **MLA** (the default when unset).
 
 **Action:** Export Last to Drive (or Local .docx).
 
-**Expected:**
-- Top of doc has TWO italic lines:
-  1. `*ChatGPT · 2026-MM-DD · <conversation title>*`
-  2. `*Citation (MLA): OpenAI. "<title>." ChatGPT, <D> <Mon>. <YYYY>, <URL>.*`
-- The URL inside the citation is clickable (Google Docs auto-linkifies).
-- For Gemini exports: vendor = "Google", platform = "Gemini".
-- For Claude exports: vendor = "Anthropic", platform = "Claude".
+**Expected (MLA, per the MLA Style Center's Aug 2025 guidance — no author, tool is the container):**
+- Top of doc: line 1 italic `ChatGPT · 2026-MM-DD · <conversation title>`; line 2 plain text with only the tool name in italics:
+  `Citation (MLA): "<title>" prompt. *ChatGPT*, OpenAI, <D> <Mon.> <YYYY>, https://chatgpt.com/c/<id>.` — the URL keeps its `https://` so it stays clickable in Google Docs.
+- Publisher/vendor: ChatGPT→OpenAI, Gemini→Google, Claude→Anthropic, DeepSeek→DeepSeek, Perplexity→Perplexity AI.
+- Title has no stray `*`, `_` or backticks.
 - After **append** (chip → [+↩] → Last response): the appended content goes BELOW the original; the citation stays at the top, untouched.
+
+**APA** (popup → APA): line 2 is `Citation (APA): OpenAI. (<YYYY>). *ChatGPT* [Large language model]. https://chatgpt.com` — a tool-level reference (private chat URLs aren't retrievable, so APA's chat-level form isn't used).
+
+**None** (popup → None): only the italic `ChatGPT · date · title` line, then the body. No citation line at all.
+
+**Persistence:** change the setting in the popup, export again in an already-open AI tab — the new style applies without reloading the page.
 
 **Common failure modes:**
 - Citation appears at bottom and gets buried by appends → check `exportMarkdown` puts citation in the prepend, not the append.
@@ -243,6 +247,18 @@ Walk through this file after any non-trivial change. Be honest: if you didn't ru
 - **Recent-docs compact height:** With exactly one recent document, open the panel and confirm the strip is one row tall; with 8 documents, confirm it grows to the capped strip and scrolls internally.
 - **ChatGPT full-conversation numbering:** Export a multi-turn conversation. Confirm user messages and assistant replies are all present in order, and assistant headings are numbered `Response 1`, `Response 2`, etc.
 - **Context menu scoping**: Select text on a non-AI site (e.g. wikipedia.org) and right-click. "Export to Docs" must NOT appear there. Select text on any of the 5 supported platforms and right-click — it must appear.
+- **v4.5.0 — popup:** Version badge equals `manifest.json` version (not hard-coded). With cleared storage, "When I click Export" shows **Choose replies (recommended)** selected. The three numbered steps sit right under the header/status line; section labels ("Save to", "When I click Export") are clearly readable in light and dark mode. Only the *selected* Save-to / mode row shows its grey description line (the others are single-line to keep the popup under Chrome's 600px popup limit — measured ~553–581px in headless Chrome with stubbed APIs; the popup should NOT show a vertical scrollbar on a normal AI page, empty chat, or non-AI tab; it may scroll when Notion/Obsidian is selected or "More options" is expanded). "More options ▾" → "Show in export panel": uncheck Notion/Obsidian → they disappear from the Save-to list; the last remaining option cannot be unchecked; the currently selected destination never disappears. The same section holds the Citation select.
+- **v4.5.0 — page button:** Export button on each AI reply shows the new document-arrow icon (not the Google Drive logo) and "Export" text readable in light AND dark theme; with Notion selected it reads "Export to Notion". Verify on ChatGPT, Claude, Gemini at least. Check that it no longer overlaps the native Copy icon on ChatGPT (hypothesis fix: `flex:none; min-width:max-content`) — if it still overlaps, capture the button's Computed tab (width/min-width).
+- **v4.5.0 — panel grid + hiding:** Destination buttons show as a grid (3 + 2), no horizontal scrolling, all five visible. Hide Notion/Obsidian in the popup → panel shows only the remaining ones.
+- **v4.5.0 — inline Notion/Obsidian setup:** With Notion selected and no token: card shows 3 steps + token/page fields + "Step-by-step guide →". Paste a token and a full Notion page URL → Save → "✓ Notion connected"; export to Notion works; popup shows "Connected". Select Obsidian: note + optional vault field; an entered vault name is used by the next export.
+- **v4.5.0 — first-run hints (new-user path):** In a fresh Chrome profile (or clear `onboardingSeen` and `globalRecentDocs`): bubble "Click Export under any reply to save it" appears above the first visible Export button, follows it on scroll, disappears on any click, and never returns after reload. Opening the panel for the first time shows "Choose where to save ↓" once. For an existing user (has recent docs) neither hint appears.
+- **v4.5.0 — Send report:** Trigger any "❌" failure toast (e.g. export to Notion with a wrong token). Toast stays ≥9 s and shows **Send report**. Click → "Sent — thanks!" and a new row appears in the Google Form responses with Platform, Extension version, Destination, Export mode, Error message, Browser — and **no chat content or conversation URL**. "⚠️" validation toasts have no report button.
+- **v4.5.0 — citation style:** Popup "Citation line in exports": switch MLA → APA → None, export the last reply each time (Markdown `.md` is enough, no OAuth needed), and check the first lines match B11.7. Spanish Chrome UI: label reads "Línea de cita en las exportaciones", option "Ninguna".
+- **v4.5.0 — popup page status:** Open the popup on (a) a ChatGPT/Claude/Gemini conversation with replies → green dot "Found N replies on this page" (N is roughly the number of AI replies; ChatGPT image-only replies are counted but have no button yet — CHATGPT-001), (b) a brand-new empty chat → grey "No AI replies on this page yet." plus the "Replies here but no Export button? Send report" link, (c) any unrelated tab (e.g. wikipedia.org) → "Open ChatGPT, Gemini, Claude, DeepSeek or Perplexity to export.", no report link. In (b) click Send report → "Sent — thanks!" and a new Form row with Error message `Popup check: 0 AI replies detected on this page`.
+- **BUG-050** (ChatGPT full export loses your messages): Step B3 on ChatGPT in a conversation with 2+ turns. The doc must have `## You` sections for every question and NO "⚠️ Notice" section. If the Notice appears, send `h4`/message-unit outerHTML of one user turn.
+- **BUG-051** (dollar amounts became math): Ask ChatGPT "Compare a $110 plan with a $120 plan and a $1,200 yearly fee" (or any answer with 2+ dollar amounts in one sentence), export to Word/Drive. The `$` signs and the text must appear unchanged — no equation objects. Also confirm real inline math in the same doc still renders as equations.
+- **BUG-052** (invisible panel checkboxes): Open the panel on ChatGPT. The selected reply shows a blue box with a white tick; unselected rows show an empty bordered box; "Select all" ticks every row, "Deselect all" empties them. Check in light and dark theme.
+- **BUG-053** (button colour / Markdown label): On DeepSeek the Export button is neutral dark gray (light theme) or light gray (dark theme) — never purple/blue until hovered. Select Markdown in the panel: the main button says "Save .md →" (Word → "Save .docx →", Drive → "Export to Docs →").
 - **CHATGPT-001** (not fixed, needs data): Generate an image with ChatGPT (DALL-E). Check whether an export button appears on that response at all. If not (expected per this gap), right-click the image response's download/regenerate icon → Inspect → Copy outerHTML, and hand that over to continue the fix.
 
 ---

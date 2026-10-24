@@ -9,7 +9,7 @@
 
 <h1>Privacy Policy</h1>
 
-<p><em>Last updated: September 28, 2026</em></p>
+<p><em>Last updated: October 23, 2026</em></p>
 
 <p><strong>AI Chat Exporter</strong> reads AI responses only when you choose to export them. This policy explains what information the extension processes, where it is sent, and how it is stored.</p>
 
@@ -22,8 +22,10 @@
 <li><strong>Google account authentication</strong> — when you choose Google Drive, Chrome's identity API supplies an OAuth token used to create or update documents in your Drive. The extension requests only the <code>drive.file</code> scope, which limits API access to files created or opened by this extension.</li>
 <li><strong>Notion credentials</strong> — if you configure Notion, the integration token and parent page ID you enter are stored in Chrome's local extension storage. The token is used to authenticate the page creation request you initiate.</li>
 <li><strong>Obsidian settings</strong> — your optional vault name is stored in Chrome's local extension storage and is used when you choose to open an export in Obsidian.</li>
-<li><strong>Other preferences</strong> — your export mode, destination, and recent Google Doc references are stored locally using Chrome's <code>storage</code> API.</li>
+<li><strong>Other preferences</strong> — your export mode, destination, which destinations to show, citation style, whether you have seen the first-run hints, and recent Google Doc references are stored locally using Chrome's <code>storage</code> API.</li>
 <li><strong>Image data</strong> — when an exported response contains images, the extension may request access to the image's source domain, fetch the image, and include it in destinations that support embedded images. Image data is processed for that export and is not stored on a developer-controlled server. The current Notion export does not upload response images.</li>
+<li><strong>Page status (popup)</strong> — when you open the extension popup, it asks the active AI chat tab how many AI replies it can detect and shows that number in the popup. The number is not stored and is not sent anywhere.</li>
+<li><strong>Error reports you choose to send</strong> — if an export fails, or the popup cannot find any AI replies, you can click <strong>Send report</strong>. Only then does the extension submit a short report to a Google Form operated by the developer. A report contains: the AI platform name, the extension version, your selected export destination and mode, the first 200 characters of the error message (or a fixed note such as “0 AI replies detected”), and your Chrome version and operating system. It does not include your conversation content or the link to your conversation; the error text comes from the extension or from Google's or Notion's API and can contain technical details such as a document ID. Nothing is sent unless you click the button.</li>
 </ul>
 
 <h2>How We Use Information</h2>
@@ -38,6 +40,7 @@
 <li><strong>Local files:</strong> download a <code>.docx</code> or <code>.md</code> file to your device. These destinations do not require a Google account.</li>
 <li>Preserve supported formatting such as headings, lists, tables, code blocks, math, and images where supported by the destination. Google Docs exports include source and citation metadata.</li>
 <li>Remember your preferences and recent Google Doc references locally so the extension behaves consistently between sessions.</li>
+<li><strong>Error reports:</strong> if you click “Send report”, the developer receives the short report described above and uses it only to find and fix the problem.</li>
 </ul>
 
 <h2>Permissions Explained</h2>
@@ -52,7 +55,7 @@
 <li><strong>Access to <code>chatgpt.com</code>, <code>claude.ai</code>, <code>gemini.google.com</code>, <code>chat.deepseek.com</code>, and <code>www.perplexity.ai</code></strong> — required to add export controls and read the response you choose to export.</li>
 <li><strong>Access to <code>googleapis.com</code> and <code>docs.googleapis.com</code></strong> — required to upload documents to Google Drive and to append text to existing Google Docs (used only when Drive is the selected destination).</li>
 <li><strong>Access to <code>api.notion.com</code></strong> — required to create a Notion page when Notion is the selected destination.</li>
-<li><strong>Optional access to image CDN domains</strong> — used to fetch images included in an export. Chrome may ask for access to the image's domain when needed. If you decline, the export continues and the image is represented by a placeholder or source reference where supported.</li>
+<li><strong>Optional access to other image domains</strong> — declared so images hosted on other sites could be fetched for an export. The current version does not request this access; images from those sites are exported as a link or placeholder instead.</li>
 </ul>
 
 <h2>Data Storage &amp; Security</h2>
@@ -78,12 +81,12 @@
 <li><strong>Notion</strong> — when you choose Notion, the selected content and page title are sent to the Notion API using the integration token you configured.</li>
 <li><strong>The Obsidian app on your device</strong> — when you choose Obsidian, the export content is passed to the app through the <code>obsidian://</code> link handler.</li>
 <li><strong>Image CDN domains</strong> — when an export contains images, the extension requests the image from its source domain if you grant the required access.</li>
-<li><strong>Google Forms</strong> — if you choose to send feedback or product suggestions, or uninstall the extension, a Google Form may open. Any information you submit there is sent to Google Forms.</li>
+<li><strong>Google Forms</strong> — if you choose to send feedback or product suggestions, or uninstall the extension, a Google Form may open, and anything you submit there is sent to Google Forms. If you click “Send report”, the fields listed above are submitted to a Google Form operated by the developer. Google Forms is subject to Google's own privacy policy.</li>
 </ul>
 
 <h2>Analytics &amp; Tracking</h2>
 
-<p>The extension does not include developer-operated analytics, telemetry, error reporting, or usage tracking. Export content leaves your browser only when required by the destination you choose, as described above.</p>
+<p>The extension does not include analytics, telemetry, automatic error reporting, or usage tracking. The only information that reaches the developer is what you choose to submit yourself: through a feedback form, the uninstall survey, or the “Send report” button described above. Export content leaves your browser only when required by the destination you choose, as described above.</p>
 
 <h2>Changes</h2>
 

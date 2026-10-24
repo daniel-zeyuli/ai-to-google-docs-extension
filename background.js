@@ -60,7 +60,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'sendReport') {
+    sendReport(request.fields)
+      .then(result => sendResponse(result))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
 });
+
+// ── "Send report": user-initiated error report → Google Form (no chat content) ──
+const REPORT_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSehR5HTQ8EfysFCGJXIU-sHA4ufeMg_XZc1FXw0ZNa8idxDNw/formResponse';
+const REPORT_ENTRIES = {
+  platform:    'entry.192912642',
+  version:     'entry.776026784',
+  destination: 'entry.1765785406',
+  mode:        'entry.1200776881',
+  error:       'entry.664686605',
+  browser:     'entry.1471043997'
+};
+
+async function sendReport(fields) {
+  const body = new URLSearchParams();
+  for (const [key, entry] of Object.entries(REPORT_ENTRIES)) {
+    body.set(entry, String((fields && fields[key]) || '').slice(0, 300));
+  }
+  // no-cors: Google Forms doesn't send CORS headers; the response is opaque but the POST is delivered.
+  await fetch(REPORT_FORM_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body
+  });
+  return { success: true };
+}
 
 // ── Context menu: export selected text ──
 chrome.runtime.setUninstallURL('https://docs.google.com/forms/d/e/1FAIpQLSeOIzgm06tnL3OPgGbcML5TNHTw3lARi1eSei5v9qA34FWV7g/viewform');

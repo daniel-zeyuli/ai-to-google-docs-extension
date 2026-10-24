@@ -52,16 +52,19 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #9ca3af;
+  color: #374151;
   font-size: 13px;
+  font-weight: 500;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
   position: relative;
   z-index: 2;
+  flex: none;
+  min-width: max-content;
 }
-.cgd-export-btn:hover  { background: rgba(59,130,246,0.15); color: #60a5fa; }
+.cgd-export-btn:hover  { background: rgba(59,130,246,0.15); color: #60a5fa !important; }
 .cgd-export-btn:active { background: rgba(59,130,246,0.25); transform: scale(0.97); }
 .cgd-export-btn svg    { flex-shrink: 0; }
 
@@ -124,26 +127,22 @@
 
 /* ── Destination toggle row ─────────────────────────────────── */
 .cgd-dest-row {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
   gap: 6px;
-  padding: 7px 8px;
+  padding: 8px;
   border-bottom: 1px solid var(--p-divider);
-  overflow-x: auto;
-  flex: 1;
   min-width: 0;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
   flex-shrink: 0;
 }
-.cgd-dest-row::-webkit-scrollbar { display: none; }
 
 .cgd-dest-btn {
-  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 4px;
   background: var(--p-btn-bg);
   border: 1.5px solid transparent;
   border-radius: 8px;
@@ -160,6 +159,112 @@
   border-color: var(--p-accent-bd);
   color: var(--p-accent);
 }
+
+/* ── First-run pointer at the Export button ─────────────────── */
+.cgd-tip-bubble {
+  position: fixed;
+  z-index: 99999;
+  visibility: hidden;
+  pointer-events: none;
+  max-width: 230px;
+  padding: 8px 12px;
+  background: #1f2937;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+}
+.cgd-tip-bubble::after {
+  content: '';
+  position: absolute;
+  left: 22px;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  background: #1f2937;
+  transform: rotate(45deg);
+}
+.cgd-tip-bubble.cgd-tip-below::after { bottom: auto; top: -5px; }
+
+/* ── One-time hint + inline setup card ──────────────────────── */
+.cgd-tip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 12px;
+  background: var(--p-accent-bg);
+  color: var(--p-accent);
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.cgd-tip-close {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  opacity: 0.7;
+}
+.cgd-tip-close:hover { opacity: 1; }
+
+.cgd-setup-card {
+  display: none;
+  padding: 9px 12px 10px;
+  border-bottom: 1px solid var(--p-divider);
+  font-size: 11px;
+  color: var(--p-sub);
+  line-height: 1.4;
+  flex-shrink: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.cgd-setup-title { font-size: 12px; font-weight: 600; color: var(--p-text); margin-bottom: 4px; }
+.cgd-setup-steps { margin: 0 0 7px 16px; padding: 0; }
+.cgd-setup-steps li { margin: 1px 0; }
+.cgd-setup-note { margin-bottom: 6px; }
+.cgd-setup-row { display: flex; align-items: center; justify-content: space-between; }
+.cgd-setup-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 5px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--p-text);
+  background: var(--p-btn-bg);
+  border: 1px solid var(--p-divider);
+  border-radius: 6px;
+  font-family: inherit;
+}
+.cgd-setup-input:focus { outline: none; border-color: var(--p-accent); }
+.cgd-setup-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; }
+.cgd-setup-btn {
+  padding: 5px 14px;
+  background: var(--p-accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cgd-dark .cgd-setup-btn { color: #202124; }
+.cgd-setup-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  color: var(--p-accent);
+  cursor: pointer;
+  text-decoration: none;
+}
+.cgd-setup-link:hover { text-decoration: underline; }
 
 /* ── Select all / none ──────────────────────────────────────── */
 .cgd-panel-quick {
@@ -223,14 +328,41 @@
 }
 .cgd-msg-row:hover { background: var(--p-row-hover); }
 
+/* Drawn by us, not the native control: host pages (ChatGPT) reset checkbox appearance and made it invisible. */
 .cgd-msg-row input[type="checkbox"] {
-  margin-top: 2px;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  position: relative !important;
+  display: inline-block !important;
+  box-sizing: border-box !important;
   flex-shrink: 0;
+  width: 16px !important;
+  height: 16px !important;
+  margin: 2px 0 0 !important;
+  padding: 0 !important;
+  border: 1.5px solid var(--p-muted) !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  opacity: 1 !important;
   cursor: pointer;
-  accent-color: var(--p-accent);
-  width: 15px;
-  height: 15px;
 }
+.cgd-msg-row input[type="checkbox"]:checked {
+  background: var(--p-accent) !important;
+  border-color: var(--p-accent) !important;
+}
+.cgd-msg-row input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 0.5px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.cgd-dark .cgd-msg-row input[type="checkbox"]:checked::after { border-color: #202124; }
+.cgd-msg-row input[type="checkbox"]:focus-visible { outline: 2px solid var(--p-accent) !important; outline-offset: 2px; }
 
 .cgd-msg-preview {
   font-size: 12px;
@@ -360,9 +492,9 @@
 .cgd-btn-path {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  color: #6b7280;
+  gap: 5px;
+  font-size: 13px;
+  color: inherit;
   flex-shrink: 0;
   white-space: nowrap;
 }

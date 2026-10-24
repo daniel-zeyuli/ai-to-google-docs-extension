@@ -64,7 +64,10 @@ exportDest:         'drive' | 'local' | 'markdown' | 'notion' | 'obsidian'  // v
 notionToken:        string (user's Notion integration token, stored as-is)
 notionParentPageId: string (UUID format, normalized on save in popup.js)
 obsidianVault:      string (vault name; if empty, Obsidian uses its default vault)
-defaultExportMode:  'last' | 'full' | 'select'
+defaultExportMode:  'last' | 'full' | 'select'                 // popup + content.js both default to 'select' when unset
+hiddenDestinations: string[] of exportDest values the user hid (v4.5.0) // the active destination is never hidden; ≥1 always visible
+onboardingSeen:     { button?: true, panel?: true }              // v4.5.0 one-time first-run hints; set when shown/dismissed
+citationStyle:      'mla' | 'apa' | 'none'                       // v4.5.0 header citation line; unset = 'mla' (the pre-4.5.0 behavior)
 exportFolderId:     auto-created "AI Chat Exports" parent folder ID
 exportFolderIds:    { [platformName]: subfolderId }          // per-platform subfolder IDs (v1.0)
 customFolderId / customFolderName:  REMOVED in v1.0 — auto-cleared on first run by background.js

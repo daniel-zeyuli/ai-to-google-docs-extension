@@ -17,27 +17,32 @@ document.addEventListener('DOMContentLoaded', () => {
   const notionDetail      = document.getElementById('notion-detail');
   const obsidianVaultInput = document.getElementById('obsidian-vault');
   const obsidianDetail     = document.getElementById('obsidian-detail');
-  const modeHint = document.getElementById('mode-hint');
   const shortcutDisplay = document.getElementById('shortcut-display');
   const shortcutCustomize = document.getElementById('shortcut-customize');
+  const destChecks = document.getElementById('dest-checks');
+  const citationSelect = document.getElementById('citation-select');
+
+  document.getElementById('version-badge').textContent = chrome.runtime.getManifest().version;
 
   let currentDest = 'drive';
-  let currentMode = 'last';
+  let currentMode = 'select';
+  let hiddenDests = [];
 
-  const MODE_HINTS = {
-    last:   chrome.i18n.getMessage('hintLast') || 'Exports the last AI response',
-    full:   chrome.i18n.getMessage('hintFull') || 'Exports the full conversation',
-    select: chrome.i18n.getMessage('hintPick') || 'Opens panel to pick responses'
-  };
+  const DEST_OPTS = { drive: optDrive, local: optLocal, markdown: optMd, notion: optNotion, obsidian: optObsidian };
 
-  chrome.storage.local.get(['exportDest', 'defaultExportMode', 'notionToken', 'notionParentPageId', 'obsidianVault'], (d) => {
+  chrome.storage.local.get(['exportDest', 'defaultExportMode', 'notionToken', 'notionParentPageId', 'obsidianVault', 'hiddenDestinations', 'citationStyle'], (d) => {
     currentDest = d.exportDest || 'drive';
-    currentMode = d.defaultExportMode || 'last';
+    currentMode = d.defaultExportMode || 'select';
+    hiddenDests = Array.isArray(d.hiddenDestinations) ? d.hiddenDestinations : [];
+    citationSelect.value = d.citationStyle || 'mla';
     if (d.notionToken)        notionTokenInput.value = d.notionToken;
     if (d.notionParentPageId) notionPageInput.value = d.notionParentPageId;
     if (d.obsidianVault)      obsidianVaultInput.value = d.obsidianVault;
     _updateNotionDetail(d.notionToken, d.notionParentPageId);
     _updateObsidianDetail(d.obsidianVault);
+    destChecks.querySelectorAll('input[data-dest-check]').forEach(cb => {
+      cb.checked = !hiddenDests.includes(cb.dataset.destCheck);
+    });
     applyDest();
     applyMode();
   });
@@ -65,13 +70,15 @@ document.addEventListener('DOMContentLoaded', () => {
     optObsidian.classList.toggle('active', currentDest === 'obsidian');
     notionSettings.classList.toggle('visible',   currentDest === 'notion');
     obsidianSettings.classList.toggle('visible', currentDest === 'obsidian');
+    Object.entries(DEST_OPTS).forEach(([dest, el]) => {
+      el.style.display = (hiddenDests.includes(dest) && dest !== currentDest) ? 'none' : '';
+    });
   }
 
   function applyMode() {
-    document.querySelectorAll('.mode-tab').forEach(b => {
+    document.querySelectorAll('.mode-opt').forEach(b => {
       b.classList.toggle('active', b.dataset.mode === currentMode);
     });
-    modeHint.textContent = MODE_HINTS[currentMode] || '';
   }
 
   [optDrive, optLocal, optMd, optNotion, optObsidian].forEach(opt => {
@@ -107,11 +114,76 @@ document.addEventListener('DOMContentLoaded', () => {
     _updateObsidianDetail(val);
   });
 
-  document.querySelectorAll('.mode-tab').forEach(b => {
+  document.querySelectorAll('.mode-opt').forEach(b => {
     b.addEventListener('click', () => {
       currentMode = b.dataset.mode;
       chrome.storage.local.set({ defaultExportMode: currentMode });
       applyMode();
+    });
+  });
+
+  destChecks.querySelectorAll('input[data-dest-check]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const boxes = Array.from(destChecks.querySelectorAll('input[data-dest-check]'));
+      if (!boxes.some(b => b.checked)) { cb.checked = true; return; }
+      hiddenDests = boxes.filter(b => !b.checked).map(b => b.dataset.destCheck);
+      chrome.storage.local.set({ hiddenDestinations: hiddenDests });
+      applyDest();
+    });
+  });
+
+  citationSelect.addEventListener('change', () => {
+    chrome.storage.local.set({ citationStyle: citationSelect.value });
+  });
+
+  // ── Status of the active tab: do we see AI replies on this page? ──
+  const statusBox = document.getElementById('page-status');
+  const statusText = document.getElementById('status-text');
+  const statusReport = document.getElementById('status-report');
+  let statusPlatform = '';
+  const msg = (key, fallback) => chrome.i18n.getMessage(key) || fallback;
+
+  function showStatus(ok, text, canReport) {
+    statusBox.hidden = false;
+    statusBox.classList.toggle('ok', ok);
+    statusText.textContent = text;
+    statusReport.hidden = !canReport;
+  }
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs && tabs[0];
+    if (!tab || tab.id == null) return;
+    chrome.tabs.sendMessage(tab.id, { action: 'getPlatform' }, (resp) => {
+      void chrome.runtime.lastError;
+      if (!resp || !resp.platform) {
+        showStatus(false, msg('statusUnsupported', 'Works on ChatGPT, Gemini, Claude, DeepSeek & Perplexity. Already on one? Refresh the page.'), false);
+        return;
+      }
+      statusPlatform = resp.platform;
+      const n = resp.responseCount || 0;
+      if (n === 1) showStatus(true, msg('statusFoundOne', 'Found 1 reply on this page'), false);
+      else if (n > 1) showStatus(true, msg('statusFoundMany', 'Found {n} replies on this page').replace('{n}', n), false);
+      else showStatus(false, msg('statusNone', 'No AI replies on this page yet.'), true);
+    });
+  });
+
+  // User-initiated only: sends platform, version, destination, mode, a fixed note and browser/OS — no chat content.
+  statusReport.addEventListener('click', async () => {
+    statusReport.disabled = true;
+    const prefs = await new Promise(resolve => chrome.storage.local.get(['exportDest', 'defaultExportMode'], resolve));
+    const chromeVersion = (navigator.userAgent.match(/Chrome\/(\d+)/) || [])[1] || 'unknown';
+    const os = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || 'unknown';
+    const fields = {
+      platform: statusPlatform,
+      version: chrome.runtime.getManifest().version,
+      destination: prefs.exportDest || 'drive',
+      mode: prefs.defaultExportMode || 'select',
+      error: 'Popup check: 0 AI replies detected on this page',
+      browser: `Chrome ${chromeVersion} · ${os}`
+    };
+    chrome.runtime.sendMessage({ action: 'sendReport', fields }, (resp) => {
+      void chrome.runtime.lastError;
+      statusReport.textContent = resp && resp.success ? msg('statusSent', 'Sent — thanks!') : msg('statusFail', 'Could not send');
     });
   });
 

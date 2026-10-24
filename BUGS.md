@@ -590,6 +590,46 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 
 ---
 
+### BUG-050: "Export Full Conversation" on ChatGPT loses every user message on the current DOM
+**Date:** 2026-10-22
+**Symptom:** On the DOM the maintainer pasted (the classmate's overlapping-button report), the full-conversation export falls into the "⚠️ Notice — missing your own messages" branch: only ChatGPT's replies are exported, every question is dropped.
+**Root cause:** `_chatGPTFindUserMessages()` relied on `h4[data-conversation-role="user"]` (a hypothesis from BUG-045 that held on the DOM at that time). In the pasted DOM only the *assistant* `<h4>` still carries `data-conversation-role`; the user `<h4>` is bare. Both roles do carry a symmetric `data-chatgpt-search-unit-key="<turn>:<n>:user|assistant"`.
+**Fix:** Added a third fallback (after the legacy attribute and the h4 landmark): top-level `[data-chatgpt-search-unit-key$=":user"]` elements.
+**Verification:** Reproduced and fixed in headless Chrome against a fixture built from the pasted DOM structure (Notice appeared before the fix; `## You` + `## ChatGPT — Response 1` after, no Notice). **Not verified on live chatgpt.com.**
+**Related files:** `content.js` (`_chatGPTFindUserMessages`).
+
+---
+
+### BUG-051: Dollar amounts were converted into math ("$110, not $120" → italic formula, dollar signs lost)
+**Date:** 2026-10-22
+**Symptom:** Two dollar amounts in one paragraph (very common in finance/business answers) exported to Word/Docs with the text between the `$` signs turned into an equation and both `$` removed: "The correct answer is $110, not $120." → "The correct answer is [110,not]120." Backslash-escaping (`\$`) did not help.
+**Root cause:** `extractMathRuns` in `converter.js` treats the first lone `$` as an opener and the next lone `$` as the closer, with no notion of currency. Plain-text `$` from the page reaches the converter unescaped, indistinguishable from the `$…$` the extractor itself emits for KaTeX.
+**Fix:** Added `looksLikeCurrency(str, i)` and skip such `$` both as openers and as closers: a `$` followed by a number (`110`, `1,200.50`, optionally `M`/`B`/`k`/`million`…) and then a text boundary (end, whitespace not followed by an operator, `, . ; : ! ? ) %`, or `/unit`). Math that merely starts with a number (`$100$`, `$5x+1$`, `$5 + 3$`, `$5 \times 3$`, `$1/2$`, `$0.5$`) is deliberately not matched. Additive change only; `converter.js` otherwise untouched.
+**Review follow-up (Opus, same day):** the first version of the rule treated number-led math with a spaced minus (`$1 - p$`, `$1 - 0.05 = 0.95$`, `$2 - 3$`) as currency and exported it as plain text — a regression vs 4.4.1. Fixed by (1) excluding `- − ± ÷ · ≤ ≥ ≠ ≈` (in addition to `+ = * / ^ < > × \`) after the number, and (2) `findSingleDollarMath`: a dollar amount cannot sit inside inline math, so meeting one while searching for the closing `$` abandons that opener and keeps scanning — this keeps `$110 - $120` literal and still finds a later `$x$`.
+**Verification:** Run through the real converter: currency variants ($110/$120, thousands separators, `$5M`, `$20/hr`, `$110-$120`, `$110 - $120`, parentheses) stay literal; number-led math (`$100$`, `$5x+1$`, `$5 + 3$`, `$5 \times 3$`, `$1/2$`, `$1 - p$`, `$1 − p$`, `$5 \pm 2$`) stays math and matches 4.4.1; a 12-item math/chemistry/table/list/code corpus is byte-identical to 4.4.1. **Not verified on live pages.** Known gap: `$1, 2, 3$` (comma + space) is treated as currency.
+**Related files:** `converter.js` (`looksLikeCurrency`, `extractMathRuns`).
+
+---
+
+### BUG-052: Selection-panel checkboxes were invisible on ChatGPT (no tick when a reply is selected / "Select all")
+**Date:** 2026-10-24
+**Symptom:** Maintainer screenshot of the Export panel on ChatGPT: rows show "3 selected" and a highlighted row, but no checkbox or tick anywhere in the list.
+**Root cause:** The row checkbox was the native `<input type="checkbox">` with only `accent-color`/size set. A host page that strips native checkbox appearance (`appearance:none` with no border/background) leaves it invisible, while the layout gutter remains (the empty space left of each row).
+**Fix:** `styles.css` now draws the checkbox itself (`appearance:none !important`, 16px, 1.5px border, filled accent colour + CSS-drawn tick when `:checked`, dark-mode tick colour), so host resets cannot hide it.
+**Verification:** Reproduced in headless Chrome by adding a host-style `appearance:none` reset to the fixture (screenshot: no checkbox before, blue checked box after). **Not verified on live ChatGPT.**
+**Related files:** `styles.css` (`.cgd-msg-row input[type="checkbox"]`).
+
+---
+
+### BUG-053: Export button turned purple on DeepSeek; Markdown destination's footer button said "Export to Docs"
+**Date:** 2026-10-24
+**Symptoms:** (a) After 4.5.0 work changed `.cgd-export-btn` to `color: inherit`, DeepSeek's coloured action bar tinted the button purple. (b) With Markdown selected the panel's primary button still read "Export to Docs →" (pre-existing label gap — only local/notion/obsidian had branches).
+**Fix:** (a) Fixed tones instead of inheriting: `#374151` on light backgrounds, `#e5e7eb` on dark, chosen from the luminance of the first opaque background behind the button (not `isDarkMode()`, whose `prefers-color-scheme` check reported "dark" for a light-themed site on a dark-mode Mac and produced light-gray-on-white — caught in review, reproduced in headless Chrome). Applied at creation and re-synced on each DOM-mutation pass so theme switches follow; hover keeps the blue via `!important`. (b) Added the Markdown branch ("Save .md →") in both places that set the label.
+**Verification:** In headless Chrome, a host that colours its action bar `#7c3aed` still yields `rgb(55, 65, 81)`; the Markdown panel label reads "Save .md →". **Not verified on live DeepSeek.**
+**Related files:** `styles.css` (`.cgd-export-btn`), `content.js` (`_syncButtonColors`, `createExportButton`, the two `exportBtn.textContent` chains).
+
+---
+
 ## v4.3 planned features
 
 ### High priority

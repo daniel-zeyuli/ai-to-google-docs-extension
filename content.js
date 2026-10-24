@@ -18,10 +18,13 @@
 
   const DRIVE_ICON_SVG = `<svg width="15" height="13" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:inline-block;vertical-align:text-bottom"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066DA"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0-1.2 4.5h27.5z" fill="#00AC47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#EA4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832D"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684FC"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#FFBA00"/></svg>`;
   const DOCX_ICON_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:inline-block;vertical-align:text-bottom"><rect x="2" y="1" width="20" height="22" rx="2" fill="#2B579A"/><path d="M7 9.5l1.5 5 1.5-3.5 1.5 3.5 1.5-5" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
-  const MARKDOWN_ICON_SVG = `<svg width="15" height="13" viewBox="0 0 208 128" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:inline-block;vertical-align:text-bottom"><rect x="4" y="4" width="200" height="120" rx="10" fill="none" stroke="currentColor" stroke-width="8"/><path d="M30 94V34h18l18 23 18-23h18v60H82V63L66 84 50 63v31zM145 94l-28-30h18V34h20v30h18z" fill="currentColor"/></svg>`;
-
+  const EXPORT_ICON_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:inline-block;vertical-align:text-bottom"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11.5v5"/><path d="m9.5 14.5 2.5 2.5 2.5-2.5"/></svg>`;
   let exportDest = 'drive';
-  chrome.storage.local.get('exportDest', d => { exportDest = d.exportDest || 'drive'; });
+  let citationStyle = 'mla';
+  chrome.storage.local.get(['exportDest', 'citationStyle'], d => {
+    exportDest = d.exportDest || 'drive';
+    citationStyle = d.citationStyle || 'mla';
+  });
 
   // Update all injected export buttons when destination changes
   chrome.storage.onChanged.addListener((changes) => {
@@ -29,6 +32,7 @@
       exportDest = changes.exportDest.newValue || 'drive';
       document.querySelectorAll('.' + BUTTON_CLASS).forEach(btn => _updateExportBtnContent(btn));
     }
+    if (changes.citationStyle) citationStyle = changes.citationStyle.newValue || 'mla';
   });
 
   function isDarkMode() {
@@ -69,12 +73,134 @@
     return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
+  // Fixed tones instead of inheriting: some hosts colour their action bar (DeepSeek made the button purple).
+  // Light/dark is read from the background actually behind the button, not isDarkMode(): that trusts
+  // prefers-color-scheme, which says "dark" for a light-themed site on a dark-mode OS (light-gray-on-white).
+  function _buttonTone(el) {
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+      const c = getComputedStyle(n).backgroundColor.match(/[\d.]+/g);
+      if (c && c.length >= 3 && (c.length < 4 || +c[3] > 0.5)) {
+        return (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255 < 0.5 ? '#e5e7eb' : '#374151';
+      }
+    }
+    return isDarkMode() ? '#e5e7eb' : '#374151';
+  }
+  function _syncButtonColors() {
+    const btns = document.querySelectorAll('.' + BUTTON_CLASS);
+    if (!btns.length) return;
+    const tone = _buttonTone(btns[0]);
+    btns.forEach(b => {
+      if (b.dataset.cgdTone !== tone) { b.dataset.cgdTone = tone; b.style.color = tone; }
+    });
+  }
+
+  function _markOnboardingSeen(key) {
+    chrome.storage.local.get('onboardingSeen', d => {
+      chrome.storage.local.set({ onboardingSeen: { ...(d.onboardingSeen || {}), [key]: true } });
+    });
+  }
+
+  // Any of these in storage means the person has already used the extension (nothing writes them at install).
+  const _USAGE_KEYS = ['globalRecentDocs', 'lastExports', 'exportDest', 'defaultExportMode', 'notionToken', 'obsidianVault'];
+  function _hasUsedBefore(d) {
+    return (Array.isArray(d.globalRecentDocs) && d.globalRecentDocs.length > 0) ||
+      (!!d.lastExports && Object.keys(d.lastExports).length > 0) ||
+      !!(d.exportDest || d.defaultExportMode || d.notionToken || d.obsidianVault);
+  }
+
+  // First-run pointer at the Export button: shown once per install, gone on any click.
+  let _buttonTipState = 'unchecked';
+  function _maybeShowButtonTip() {
+    if (_buttonTipState !== 'unchecked' || !document.querySelector('.' + BUTTON_CLASS)) return;
+    _buttonTipState = 'pending';
+    chrome.storage.local.get(['onboardingSeen', ..._USAGE_KEYS], d => {
+      const seen = d.onboardingSeen || {};
+      if (seen.button || _hasUsedBefore(d)) { _buttonTipState = 'done'; return; }
+      _showButtonTip();
+    });
+  }
+
+  function _showButtonTip() {
+    const bubble = document.createElement('div');
+    bubble.className = 'cgd-tip-bubble';
+    bubble.textContent = 'Click Export under any reply to save it';
+    document.body.appendChild(bubble);
+
+    let raf = 0;
+    function place() {
+      raf = 0;
+      const btn = Array.from(document.querySelectorAll('.' + BUTTON_CLASS)).find(b => {
+        const r = b.getBoundingClientRect();
+        return r.width > 0 && r.bottom > 0 && r.top < window.innerHeight;
+      });
+      if (!btn) { bubble.style.visibility = 'hidden'; return; }
+      const r = btn.getBoundingClientRect();
+      let top = r.top - bubble.offsetHeight - 10;
+      const below = top < 8;
+      if (below) top = r.bottom + 10;
+      bubble.classList.toggle('cgd-tip-below', below);
+      bubble.style.top = top + 'px';
+      bubble.style.left = Math.max(8, Math.min(r.left, window.innerWidth - bubble.offsetWidth - 8)) + 'px';
+      bubble.style.visibility = 'visible';
+    }
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(place); };
+    function dismiss() {
+      window.removeEventListener('scroll', schedule, true);
+      window.removeEventListener('resize', schedule);
+      document.removeEventListener('click', dismiss, true);
+      bubble.remove();
+      _buttonTipState = 'done';
+      _markOnboardingSeen('button');
+    }
+    window.addEventListener('scroll', schedule, true);
+    window.addEventListener('resize', schedule);
+    document.addEventListener('click', dismiss, true);
+    place();
+  }
+
+  // User-initiated only: nothing is sent unless the person clicks "Send report".
+  async function _sendErrorReport(errorText) {
+    const platform = isGemini ? 'Gemini' : isClaude ? 'Claude' : isDeepSeek ? 'DeepSeek' : isPerplexity ? 'Perplexity' : 'ChatGPT';
+    const prefs = await new Promise(resolve => chrome.storage.local.get(['exportDest', 'defaultExportMode'], resolve));
+    const chromeVersion = (navigator.userAgent.match(/Chrome\/(\d+)/) || [])[1] || 'unknown';
+    const os = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || 'unknown';
+    const fields = {
+      platform,
+      version: chrome.runtime.getManifest().version,
+      destination: prefs.exportDest || 'drive',
+      mode: prefs.defaultExportMode || 'select',
+      error: String(errorText).replace(/\s+/g, ' ').trim().slice(0, 200),
+      browser: `Chrome ${chromeVersion} · ${os}`
+    };
+    return new Promise(resolve => {
+      chrome.runtime.sendMessage({ action: 'sendReport', fields }, resp => {
+        void chrome.runtime.lastError;
+        resolve(!!(resp && resp.success));
+      });
+    });
+  }
+
   function showToast(message, isError = false, duration = 4000) {
     const existing = document.querySelector('.' + BANNER_CLASS);
     if (existing) existing.remove();
     const toast = document.createElement('div');
     toast.className = BANNER_CLASS;
     toast.innerHTML = message;
+    if (isError && String(message).trim().startsWith('❌')) {
+      const errorText = toast.textContent;
+      const reportBtn = document.createElement('button');
+      reportBtn.textContent = 'Send report';
+      reportBtn.style.cssText = 'margin-left:14px;padding:3px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.75);background:transparent;color:white;font-size:12px;cursor:pointer;';
+      reportBtn.addEventListener('click', async () => {
+        reportBtn.disabled = true;
+        reportBtn.textContent = 'Sending…';
+        let ok = false;
+        try { ok = await _sendErrorReport(errorText); } catch (_) { /* extension context gone (e.g. reloaded) */ }
+        reportBtn.textContent = ok ? 'Sent — thanks!' : 'Could not send';
+      });
+      toast.appendChild(reportBtn);
+      duration = Math.max(duration, 9000);
+    }
     toast.style.cssText = `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:8px;z-index:99999;font-size:14px;font-family:-apple-system,sans-serif;color:white;box-shadow:0 4px 12px rgba(0,0,0,0.3);background:${isError?'#d93025':'#1a7f37'};transition:opacity 0.3s;max-width:600px;text-align:center;`;
     document.body.appendChild(toast);
     setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, duration);
@@ -700,6 +826,22 @@
       .trim();
   }
 
+  // Generative-AI citation for the document header. MLA (Aug 2025 guidance): no author, the tool is the
+  // container, then publisher, date, location. APA (Sept 2025): tool-level reference, because a private
+  // chat URL can't be retrieved by readers (APA only cites a specific chat when it has a share link).
+  const _CITATION_VENDORS = { ChatGPT: 'OpenAI', Claude: 'Anthropic', Gemini: 'Google', DeepSeek: 'DeepSeek', Perplexity: 'Perplexity AI' };
+  function _buildCitationLine(style, { tool, convTitle, sourceUrl, now }) {
+    if (style === 'none') return '';
+    const vendor = _CITATION_VENDORS[tool] || tool;
+    if (style === 'apa') {
+      return `Citation (APA): ${vendor}. (${now.getFullYear()}). *${tool}* [Large language model]. ${location.origin}`;
+    }
+    const months = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'June', 'July', 'Aug.', 'Sept.', 'Oct.', 'Nov.', 'Dec.'];
+    const title = (convTitle || 'AI conversation').replace(/[*_`~]/g, ' ').replace(/\s+/g, ' ').trim();
+    const date = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+    return `Citation (MLA): "${title}" prompt. *${tool}*, ${vendor}, ${date}, ${sourceUrl}.`;
+  }
+
   async function exportMarkdown(markdown, suffix, imageMap = {}, skipHeader = false) {
     suffix = suffix || '';
     // Replace image markers that couldn't be captured with text fallbacks
@@ -711,19 +853,15 @@
       return srcFallback ? `(Image: ${srcFallback})` : cap?.alt ? `[Image: ${cap.alt}]` : '[Image]';
     });
 
-    // Header: metadata line + MLA citation line (top of doc — survives appends).
+    // Header: metadata line + optional citation line (top of doc — survives appends).
     const now = new Date();
     const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
     const platformName = isGemini ? 'Gemini' : isClaude ? 'Claude' : isDeepSeek ? 'DeepSeek' : isPerplexity ? 'Perplexity' : 'ChatGPT';
     const convTitle = getConversationTitle();
     const metaParts = [platformName, dateStr, ...(convTitle ? [convTitle] : [])];
     const sourceUrl = location.origin + location.pathname;
-    const vendor = isGemini ? 'Google' : isClaude ? 'Anthropic' : isDeepSeek ? 'DeepSeek' : isPerplexity ? 'Perplexity' : 'OpenAI';
-    const mlaMonths = ['Jan.','Feb.','Mar.','Apr.','May','June','July','Aug.','Sept.','Oct.','Nov.','Dec.'];
-    const mlaDate = `${now.getDate()} ${mlaMonths[now.getMonth()]} ${now.getFullYear()}`;
-    const citeTitle = convTitle || 'AI conversation';
-    const citation = `${vendor}. "${citeTitle}." ${platformName}, ${mlaDate}, ${sourceUrl}`;
-    if (!skipHeader) markdown = `*${metaParts.join(' · ')}*\n*Citation (MLA): ${citation}*\n\n` + markdown;
+    const citationLine = _buildCitationLine(citationStyle, { tool: platformName, convTitle, sourceUrl, now });
+    if (!skipHeader) markdown = `*${metaParts.join(' · ')}*\n${citationLine ? citationLine + '\n' : ''}\n` + markdown;
 
     const timestamp = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}`;
     const monthYear = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
@@ -805,7 +943,7 @@
           chrome.storage.local.get(['notionToken', 'notionParentPageId'], resolve);
         });
         if (!settings.notionToken || !settings.notionParentPageId) {
-          showToast('❌ Notion not configured. Please set your token and page ID in the extension popup.', true, 6000);
+          showToast('⚠️ Notion isn’t connected yet. Pick Notion in the export panel (or the extension popup) and add your token and page link.', true, 6000);
           return;
         }
         const result = await new Promise((resolve, reject) => {
@@ -1268,7 +1406,7 @@
     _panelAnchorEl = messages[0];
     _panelOpenedOnPath = location.pathname;
 
-    chrome.storage.local.get(['lastExports', 'globalRecentDocs'], (storageData) => {
+    chrome.storage.local.get(['lastExports', 'globalRecentDocs', 'hiddenDestinations', 'notionToken', 'notionParentPageId', 'obsidianVault', 'onboardingSeen', 'exportDest', 'defaultExportMode'], (storageData) => {
       _buildSelectPanel(messages, thisMessageEl, storageData, appendTarget);
     });
   }
@@ -1343,11 +1481,11 @@
     btnObsidian.title = 'Open in Obsidian';
     btnObsidian.innerHTML = '<span style="font-size:13px;line-height:1">🔮</span><span>Obsidian</span>';
 
-    destRow.appendChild(btnDrive);
-    destRow.appendChild(btnLocal);
-    destRow.appendChild(btnMd);
-    destRow.appendChild(btnNotion);
-    destRow.appendChild(btnObsidian);
+    const hiddenDests = Array.isArray(storageData.hiddenDestinations) ? storageData.hiddenDestinations : [];
+    [['drive', btnDrive], ['local', btnLocal], ['markdown', btnMd], ['notion', btnNotion], ['obsidian', btnObsidian]]
+      .forEach(([dest, btn]) => {
+        if (!hiddenDests.includes(dest) || exportDest === dest) destRow.appendChild(btn);
+      });
 
     // ── Path confirmation row ──
     const pathRow = document.createElement('div');
@@ -1401,6 +1539,7 @@
         exportBtn.textContent = `Append to "${shortName}" →`;
       } else {
         if (exportDest === 'local')          exportBtn.textContent = 'Save .docx →';
+        else if (exportDest === 'markdown')  exportBtn.textContent = 'Save .md →';
         else if (exportDest === 'notion')    exportBtn.textContent = 'Send to Notion →';
         else if (exportDest === 'obsidian')  exportBtn.textContent = 'Open in Obsidian →';
         else                                 exportBtn.textContent = 'Export to Docs →';
@@ -1476,6 +1615,102 @@
     }
     buildRecentChips();
 
+    // ── Inline setup card: Notion token / Obsidian vault ──
+    const setupCard = document.createElement('div');
+    setupCard.className = 'cgd-setup-card';
+    const setupData = {
+      notionToken: storageData.notionToken || '',
+      notionParentPageId: storageData.notionParentPageId || '',
+      obsidianVault: storageData.obsidianVault || ''
+    };
+    let notionEditing = false;
+
+    function _setupEl(tag, className, text) {
+      const el = document.createElement(tag);
+      if (className) el.className = className;
+      if (text) el.textContent = text;
+      return el;
+    }
+    function _setupInput(type, placeholder, value) {
+      const input = _setupEl('input', 'cgd-setup-input');
+      input.type = type;
+      input.placeholder = placeholder;
+      input.value = value;
+      input.autocomplete = 'off';
+      return input;
+    }
+
+    function renderSetupCard() {
+      setupCard.textContent = '';
+      setupCard.style.display = 'none';
+      if (exportDest === 'notion') {
+        setupCard.style.display = 'block';
+        if (setupData.notionToken && setupData.notionParentPageId && !notionEditing) {
+          const row = _setupEl('div', 'cgd-setup-row');
+          row.appendChild(_setupEl('span', '', '✓ Notion connected'));
+          const edit = _setupEl('button', 'cgd-setup-link', 'Edit');
+          edit.addEventListener('click', () => { notionEditing = true; renderSetupCard(); });
+          row.appendChild(edit);
+          setupCard.appendChild(row);
+          return;
+        }
+        setupCard.appendChild(_setupEl('div', 'cgd-setup-title', 'Connect Notion (one-time)'));
+        const steps = _setupEl('ol', 'cgd-setup-steps');
+        ['Create an integration in Notion and copy its token',
+         'Open your target page → ••• → Connections → add the integration',
+         'Paste the token and the page link below'].forEach(s => steps.appendChild(_setupEl('li', '', s)));
+        setupCard.appendChild(steps);
+        const tokenInput = _setupInput('password', 'Integration token', setupData.notionToken);
+        const pageInput = _setupInput('text', 'Page link or ID', setupData.notionParentPageId);
+        setupCard.appendChild(tokenInput);
+        setupCard.appendChild(pageInput);
+        const actions = _setupEl('div', 'cgd-setup-actions');
+        const save = _setupEl('button', 'cgd-setup-btn', 'Save');
+        const guide = _setupEl('a', 'cgd-setup-link', 'Step-by-step guide →');
+        guide.href = 'https://developers.notion.com/docs/create-a-notion-integration#getting-started';
+        guide.target = '_blank';
+        guide.rel = 'noopener noreferrer';
+        actions.appendChild(save);
+        actions.appendChild(guide);
+        setupCard.appendChild(actions);
+        save.addEventListener('click', () => {
+          const token = tokenInput.value.trim();
+          let pageId = pageInput.value.trim();
+          const idMatch = pageId.match(/([a-f0-9]{32})(?:[?#].*)?$/i);
+          if (idMatch) pageId = idMatch[1];
+          if (!token || !pageId) { showToast('⚠️ Enter both the token and the page link', true); return; }
+          setupData.notionToken = token;
+          setupData.notionParentPageId = pageId;
+          notionEditing = false;
+          chrome.storage.local.set({ notionToken: token, notionParentPageId: pageId });
+          renderSetupCard();
+        });
+      } else if (exportDest === 'obsidian') {
+        setupCard.style.display = 'block';
+        setupCard.appendChild(_setupEl('div', 'cgd-setup-note', 'Needs the Obsidian desktop app. Vault name is optional — leave it empty to use your last-opened vault.'));
+        const vaultInput = _setupInput('text', 'Vault name (optional)', setupData.obsidianVault);
+        vaultInput.addEventListener('change', () => {
+          setupData.obsidianVault = vaultInput.value.trim();
+          chrome.storage.local.set({ obsidianVault: setupData.obsidianVault });
+        });
+        setupCard.appendChild(vaultInput);
+      }
+    }
+
+    // ── One-time hint above the destination row (new users only) ──
+    let panelTip = null;
+    const _seenFlags = storageData.onboardingSeen || {};
+    if (!appendTarget && !_seenFlags.panel && !_hasUsedBefore(storageData)) {
+      panelTip = _setupEl('div', 'cgd-tip');
+      panelTip.appendChild(_setupEl('span', '', 'Choose where to save ↓'));
+      const tipClose = _setupEl('button', 'cgd-tip-close', '✕');
+      tipClose.title = 'Dismiss';
+      tipClose.addEventListener('click', () => panelTip.remove());
+      panelTip.appendChild(tipClose);
+      destRow.addEventListener('click', () => panelTip.remove(), { once: true });
+      _markOnboardingSeen('panel');
+    }
+
     function applyDestUI() {
       btnDrive.classList.toggle('cgd-dest-active', exportDest === 'drive');
       btnLocal.classList.toggle('cgd-dest-active', exportDest === 'local');
@@ -1488,6 +1723,7 @@
       }
       recentRow.style.display = (exportDest === 'drive' && recents.length > 0) ? 'flex' : 'none';
       updatePathRow();
+      renderSetupCard();
     }
     applyDestUI();
 
@@ -1612,6 +1848,7 @@
       exportBtn.textContent = `Append to "${shortName}" →`;
     } else {
       if (exportDest === 'local')          exportBtn.textContent = 'Save .docx →';
+      else if (exportDest === 'markdown') exportBtn.textContent = 'Save .md →';
       else if (exportDest === 'notion')   exportBtn.textContent = 'Send to Notion →';
       else if (exportDest === 'obsidian') exportBtn.textContent = 'Open in Obsidian →';
       else                                exportBtn.textContent = 'Export to Docs →';
@@ -1641,7 +1878,9 @@
     // ── Assemble: skip dest/recent/path rows in append mode ──
     panel.appendChild(header);
     if (!appendTarget) {
+      if (panelTip) panel.appendChild(panelTip);
       panel.appendChild(destRow);
+      panel.appendChild(setupCard);
       panel.appendChild(recentRow);
       panel.appendChild(pathRow);
     }
@@ -1759,13 +1998,18 @@
   function _chatGPTFindUserMessages() {
     const legacy = Array.from(document.querySelectorAll('[data-message-author-role="user"]'));
     if (legacy.length) return legacy;
-    return Array.from(document.querySelectorAll('h4[data-conversation-role="user"]')).map(h4 => {
+    const byHeading = Array.from(document.querySelectorAll('h4[data-conversation-role="user"]')).map(h4 => {
       let p = h4.parentElement;
       for (let i = 0; i < 4 && p; i++, p = p.parentElement) {
         if ((p.textContent || '').trim().length > (h4.textContent || '').trim().length) return p;
       }
       return h4.parentElement;
     }).filter(Boolean);
+    if (byHeading.length) return byHeading;
+    // Oct 2026 DOM (live paste): the user <h4> no longer carries data-conversation-role, but every
+    // message unit has a symmetric data-chatgpt-search-unit-key="<turn>:<n>:user" (assistant: ":assistant").
+    const unit = '[data-chatgpt-search-unit-key$=":user"]';
+    return Array.from(document.querySelectorAll(unit)).filter(el => !el.parentElement?.closest(unit));
   }
 
   // With data-testid gone, `.closest('[data-testid^="conversation-turn"]')` no
@@ -2139,19 +2383,19 @@
     const labelSpan = btn.querySelector('.cgd-btn-label');
     if (!pathSpan || !labelSpan) return;
     if (exportDest === 'local') {
-      pathSpan.innerHTML = DOCX_ICON_SVG + '<span>Export .docx</span>';
+      pathSpan.innerHTML = EXPORT_ICON_SVG + '<span>Export .docx</span>';
       btn.title = 'Export as Word file';
     } else if (exportDest === 'markdown') {
-      pathSpan.innerHTML = MARKDOWN_ICON_SVG + '<span>Export .md</span>';
+      pathSpan.innerHTML = EXPORT_ICON_SVG + '<span>Export .md</span>';
       btn.title = 'Export as Markdown';
     } else if (exportDest === 'notion') {
-      pathSpan.innerHTML = '<span style="font-size:12px;line-height:1;margin-right:3px">📋</span><span>Notion</span>';
+      pathSpan.innerHTML = EXPORT_ICON_SVG + '<span>Export to Notion</span>';
       btn.title = 'Export to Notion';
     } else if (exportDest === 'obsidian') {
-      pathSpan.innerHTML = '<span style="font-size:12px;line-height:1;margin-right:3px">🔮</span><span>Obsidian</span>';
+      pathSpan.innerHTML = EXPORT_ICON_SVG + '<span>Export to Obsidian</span>';
       btn.title = 'Open in Obsidian';
     } else {
-      pathSpan.innerHTML = DRIVE_ICON_SVG + '<span>Export</span>';
+      pathSpan.innerHTML = EXPORT_ICON_SVG + '<span>Export</span>';
       btn.title = 'Export to Google Docs';
     }
     labelSpan.textContent = '';
@@ -2175,6 +2419,8 @@
     btn.insertAdjacentHTML('beforeend', svgChevron);
 
     btn.title = 'Export options';
+    btn.dataset.cgdTone = _buttonTone(btn);
+    btn.style.color = btn.dataset.cgdTone;
     _updateExportBtnContent(btn);
     return btn;
   }
@@ -2628,13 +2874,13 @@
     }, 0);
   }
 
-  function init() { addButtons(); setupSelectionButton(); }
+  function init() { addButtons(); _syncButtonColors(); _maybeShowButtonTip(); setupSelectionButton(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
   const observer = new MutationObserver(() => {
     clearTimeout(observer._t);
-    observer._t = setTimeout(addButtons, 200);
+    observer._t = setTimeout(() => { addButtons(); _syncButtonColors(); _maybeShowButtonTip(); }, 200);
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
@@ -2645,7 +2891,8 @@
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'getPlatform') {
       const platform = isChatGPT ? 'ChatGPT' : isGemini ? 'Gemini' : isClaude ? 'Claude' : isDeepSeek ? 'DeepSeek' : isPerplexity ? 'Perplexity' : null;
-      const responseCount = platform ? getAllAIMessages().length : 0;
+      let responseCount = 0;
+      try { if (platform) responseCount = getAllAIMessages().length; } catch (_) { /* finder threw — report as 0 so the popup offers Send report */ }
       sendResponse({ platform, responseCount });
       return;
     }

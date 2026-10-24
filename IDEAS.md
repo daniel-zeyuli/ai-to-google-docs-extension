@@ -14,6 +14,23 @@ Items logged here instead of fixing inline. Each entry: date, file:line, observa
 **Next step:** Generate an image with ChatGPT, inspect the response's action bar (right-click the download/regenerate button → Inspect → Copy outerHTML, same method that worked for BUG-033/036), and hand that over before attempting a fix.
 **Related files:** `content.js` (`addChatGPTButtons` — "Second pass: DALL-E" and "Third pass: catch-all").
 
+### ONBOARD-001 — New users open the popup first, then wander (observed 2026-10-23)
+**Observation:** A friend who had just installed the extension opened the popup, then opened Google Docs, then opened Claude on their own — the popup never told them *where* the Export button lives. First contact is the popup, so it has to point at the AI sites, not just describe settings.
+**Idea (not built):** Make the popup's "not on an AI page" state actionable: replace the plain "Works on ChatGPT, Gemini…" line with five clickable chips (ChatGPT · Claude · Gemini · DeepSeek · Perplexity) that open the site in a new tab (`chrome.tabs.create`, already used by the popup — no new permission). On an AI site with an empty chat, replace "No AI replies on this page yet." with "Send a message — the Export button appears under each reply." Both states are the exact moment the person is confused.
+**Second observation (same friend, 2026-10-23):** state plainly that it works on the **website in Chrome**, not in the ChatGPT/Claude desktop or mobile apps. Chrome extensions cannot run inside native apps, so someone who uses the app will never see an Export button — this also fits the 9/23 uninstall reply "there is no button". Candidate places: popup (how-it-works step 1 and the not-on-an-AI-page line: "Open it on the web, in Chrome — not the app"), first store screenshot caption, first lines of the listing, and the listing FAQ. Don't claim other Chromium browsers (Edge/Brave/Arc) work until tested.
+**Constraints:** The popup must stay under Chrome's 600px limit (currently 554–580px, measured in headless Chrome); re-measure after adding the chip row. Chips for platforms must stay in sync with the `content_scripts.matches` list in `manifest.json`.
+
+### THEME-001 — Export panel turns dark on a light-themed site when the OS is in dark mode
+**Date:** 2026-10-24 · **Status:** Pre-existing, not changed in 4.5.0.
+**Observation:** `isDarkMode()` checks `prefers-color-scheme` before the page's actual background, so with macOS in dark mode the panel (and, before the 4.5.0 review fix, the Export button) uses dark styling on a white ChatGPT/Claude page. Readable, just mismatched. The button now uses the real background luminance (`_buttonTone`); the panel could do the same, but `isDarkMode()` is shared, so changing it needs its own test round on all five platforms.
+
+### BUTTON-OVERLAP-001 — Export button overlapping ChatGPT's Copy icon (classmate report, 2026-10-15)
+**Status:** Not reproduced. A real-Chrome harness built from the pasted DOM (our button is the first child of `.turn-action-controls`, before the native icon group) shows no overlap at window widths 1000/560/420/320px with approximated Tailwind CSS — so the cause is in ChatGPT's real stylesheet, not in the injection point. 4.5.0 adds `flex:none; min-width:max-content` to `.cgd-export-btn` as a defensive guess, unverified. If it still overlaps: DevTools → select `<button class="cgd-export-btn">` → screenshot the Computed tab (width, min-width, flex-shrink, margin) and the Styles rules coming from ChatGPT's CSS.
+
+### TITLE-001 — Two `$` in a conversation title turned into a math object in the export header
+**Date:** 2026-10-23
+**Status:** Resolved as a side effect of BUG-051 (2026-10-22): titles with dollar *amounts* ("Pricing $100 vs $200 plan") now stay literal text — verified through the real converter (0 equation objects). Titles that are genuinely `$x$ and $y$` still render as math in the header, which is acceptable.
+
 ### IMAGE-001 — Claude image search results: third-party images export as URL references, not embedded
 **Date:** 2026-05-13
 **Updated:** 2026-10-07 — real root cause found; maintainer deprioritized the fix
@@ -40,6 +57,20 @@ Items logged here instead of fixing inline. Each entry: date, file:line, observa
 **Observation:** When the user has a third-party browser extension (reported: an Adobe extension) active on the AI chat page, that extension injects its own links/UI into the page DOM. `extractMarkdown`'s DOM walk doesn't distinguish these from the AI platform's own content, so they get swept into the export — one reported case ballooned a single response into an 11-page document full of unrelated links.
 **Why not fixed:** No generic way to distinguish "content injected by an unrelated browser extension" from legitimate page content without a specific DOM signature to anchor on (e.g. a known class/attribute the injecting extension uses). Maintainer considers this low priority / hard to generalize.
 **Next step (if revisited):** Get the specific extension name + a DOM inspection of the injected markup to find an anchor to filter on.
+
+---
+
+## Maintainer TODO (growth / store — not code)
+
+- [ ] **Demo GIF (15–30 s):** ChatGPT answer with a formula → click Export → Drive → Doc opens with editable equations. Mac: Cmd+Shift+5 → Gifski/ezgif; keep < 10 MB. Use for Reddit / Product Hunt / store listing.
+- [x] **First two store screenshots redone (v8) — 2026-10-24:** `store-assets/webstore-global-v8-01.jpg` ("1 · Click Export under every AI reply" — the real Export button enlarged ~3.4×, ringed, labelled) and `webstore-global-v8-02.jpg` ("2 · Choose where it goes" — the real export panel + five large destination chips). Sources: `webstore-v8-01.html`, `webstore-v8-02.html`, `webstore-v8-common.css`; `v8-assets/button.png` and `panel.png` are captures of the extension's real UI (light theme, transparent background, 4× / 3×) taken from the real-Chrome harness. Render: `chrome --headless=new --hide-scrollbars --window-size=1280,800 --screenshot=out.png file://…/webstore-v8-0N.html`, then `sips -s format jpeg -s formatOptions 95 out.png --out x.jpg`. Text ≥ 20px, headline 76–86px so it survives thumbnail size. Still to do: v6-03…05 are older illustrations (v6-05 embeds the OLD panel with the horizontal-scroll destination row); the destinations chip says "Google Docs" while the panel button says "Drive" — consider renaming the panel button.
+  > Create a 1280×800 Chrome Web Store screenshot for a browser extension called "AI Chat Exporter". Use the attached screenshot as the base — do NOT redraw it or change any text inside it. Background: clean soft light-to-blue gradient. Place the attached screenshot large on the right with rounded corners and a soft shadow. Top-left headline, bold: "Export any AI reply in one click". Add two numbered callout badges with thin arrows pointing at the real UI: ① at the Export button under the AI reply, label "Look for this button under every reply"; ② at the row of destinations, label "Docs · Word · Markdown · Notion · Obsidian". Along the bottom, four small chips: "Math & chemistry as editable equations", "Tables", "Code blocks", "Images". Style: modern, minimal, high contrast, generous spacing, Inter/SF-like font, no people, no extra logos. Spell every word exactly as written. If any text comes out misspelled, regenerate the background only and I will add the text myself.
+- [ ] **Listing copy:** move "WHAT'S NEW" below the feature list; first screen should be value, not the ChatGPT outage story.
+- [ ] **Reply to every review** in the Developer Dashboard (including negative ones).
+- [ ] **When 4.5.0 ships (Send report):** change "nothing is sent to me" in the listing + privacy.html, and update the dashboard data-usage disclosure; update contextMenus justification text (given earlier).
+- [ ] **Weekend live tests:** recent-docs list at 1 and 8 entries (BUG-048/049), image export CORS fix, long conversation (10+ replies) in Pick/Full for the "only 3 replies" report, CHATGPT-001 outerHTML capture.
+- [ ] **Survey:** check the exact wording of the 14 "batch export" votes (multi-conversation export vs auto-save).
+- [x] **Citation style setting (shipped in 4.5.0) — implemented in the working tree (untested in browser).** `citationStyle` = mla (default) / apa / none via the popup; header line built by `_buildCitationLine` in `content.js`. MLA follows the Aug 2025 MLA Style Center guidance (no author; `"title" prompt. *Tool*, Publisher, date, location.`); APA uses the Sept 2025 tool-level reference (`Company. (year). *Tool* [Large language model]. tool-URL`) because private chat URLs are not retrievable. Still open: MLA's "version" element (model name) is omitted — not reliably readable from the page; MLA location is still the private conversation link (stripped of https://), not a share link.
 
 ---
 
