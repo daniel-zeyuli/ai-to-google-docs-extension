@@ -79,8 +79,35 @@
       color: var(--blue); cursor: pointer; text-align: left;
     }
     .status-report[hidden] { display: none; }
+    .show-btn {
+      display: block; width: 100%; margin-top: 6px; padding: 6px 8px;
+      border-radius: 8px; border: 1px solid var(--blue); background: var(--blue-bg);
+      color: var(--blue); font-size: 11px; font-weight: 700; cursor: pointer;
+      font-family: inherit;
+    }
+    .show-btn:hover { background: var(--blue); color: #fff; }
+    .show-btn[hidden] { display: none; }
+    .open-sites { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+    .open-sites[hidden] { display: none; }
+    .site-chip {
+      padding: 5px 9px; border-radius: 999px; border: 1px solid var(--blue);
+      background: var(--blue-bg); color: var(--blue); font-size: 11px; font-weight: 700;
+      cursor: pointer; font-family: inherit;
+    }
+    .site-chip:hover { background: var(--blue); color: #fff; }
+    .mini-export {
+      display: inline-flex; align-items: center; gap: 3px; vertical-align: middle;
+      margin-left: 4px; padding: 1px 8px 1px 5px; border-radius: 999px;
+      border: 1px solid rgba(26,115,232,0.4); background: rgba(26,115,232,0.10);
+      color: var(--text); font-size: 10px; font-weight: 600;
+    }
+    .mini-export svg { color: var(--blue); }
     .status-report:hover { text-decoration: underline; }
     .status-report:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+
+    /* Guidance follows the situation: an AI page already has the Show-me button, so the generic steps go. */
+    body[data-state="found"] .howto, body[data-state="none"] .howto { display: none; }
+    body[data-state="unsup"] .howto-list li:first-child { display: none; }
 
     /* ── How it works ── */
     .howto { padding: 6px 12px 7px; border-bottom: 1px solid var(--border); }
@@ -160,10 +187,11 @@
     .mode-section .section-label { padding: 0 2px; }
 
     /* ── Shortcut section ── */
-    .shortcut-section { padding: 6px 10px 7px; }
+    .shortcut-section { display: flex; align-items: center; gap: 8px; padding: 6px 12px; }
+    .shortcut-section .section-label { margin: 0; white-space: nowrap; }
     .shortcut-row {
       display: flex; align-items: center;
-      justify-content: space-between; margin-top: 3px;
+      margin: 0 0 0 auto; gap: 8px;
     }
     kbd.shortcut-display {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
@@ -172,6 +200,7 @@
       padding: 3px 7px; color: var(--sub);
     }
     .shortcut-link {
+      white-space: nowrap;
       background: none; border: none;
       font-size: 11px; color: var(--blue); cursor: pointer; padding: 0;
     }
@@ -214,6 +243,10 @@
     }
     .notion-help:hover { text-decoration: underline; }
 
+    .footer-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--border); }
+    .footer-row .pro-section { flex: 1; padding: 0; border: 0; }
+    .footer-row .feedback-section { padding: 0; }
+    .footer-row .pro-btn { padding: 6px 0; }
     .pro-section {
       padding: 5px 10px 5px;
       border-top: 1px solid var(--border);
@@ -257,14 +290,22 @@
     <span class="status-dot"></span>
     <span id="status-text"></span>
   </div>
+  <button class="show-btn" id="show-export" hidden data-i18n="showMe">Show me the Export button</button>
+  <div class="open-sites" id="open-sites" hidden>
+    <button class="site-chip" data-url="https://chatgpt.com/">ChatGPT</button>
+    <button class="site-chip" data-url="https://claude.ai/">Claude</button>
+    <button class="site-chip" data-url="https://gemini.google.com/">Gemini</button>
+    <button class="site-chip" data-url="https://chat.deepseek.com/">DeepSeek</button>
+    <button class="site-chip" data-url="https://www.perplexity.ai/">Perplexity</button>
+  </div>
   <button class="status-report" id="status-report" hidden data-i18n="statusReport">No Export button? Send report</button>
 </div>
 
 <!-- How it works -->
 <div class="howto">
   <ol class="howto-list">
-    <li data-i18n="howStep1">Chat with any AI as usual</li>
-    <li data-i18n="howStep2">Click Export under any AI reply</li>
+    <li data-i18n="howStep1">Open an AI chat on its website (not the app)</li>
+    <li><span data-i18n="howStep2">Click the blue Export button under any AI reply</span><span class="mini-export" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11.5v5"/><path d="m9.5 14.5 2.5 2.5 2.5-2.5"/></svg>Export</span></li>
     <li data-i18n="howStep3">Choose where to save</li>
   </ol>
 </div>
@@ -387,13 +428,13 @@
 </details>
 
 <!-- Pro interest -->
-<div class="pro-section">
-  <button class="pro-btn" id="proBtn">✨ Get Pro</button>
-</div>
-
-<!-- Feedback -->
-<div class="feedback-section">
-  <button class="feedback-link" id="feedbackBtn" data-i18n="feedbackLabel"></button>
+<div class="footer-row">
+  <div class="pro-section">
+    <button class="pro-btn" id="proBtn">✨ Get Pro</button>
+  </div>
+  <div class="feedback-section">
+    <button class="feedback-link" id="feedbackBtn" data-i18n="feedbackLabel"></button>
+  </div>
 </div>
 
 <script src="popup.js"></script>

@@ -42,31 +42,54 @@
   --p-csv-hover:    rgba(138,180,248,0.22);
 }
 
-/* ── Export button (inline, next to AI action bar) ─────────── */
+/* ── Export button (inline, next to AI action bar) ───────────
+   Deliberately NOT blended into the host's gray icons: new users assumed a native-looking
+   button was part of ChatGPT/Claude and never looked for it. Brand-blue pill = "added tool". */
 .cgd-export-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
+  gap: 6px;
+  padding: 4px 12px 4px 9px;
   margin-left: 4px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: #374151;
+  border: 1px solid rgba(26,115,232,0.38);
+  border-radius: 999px;
+  background: rgba(26,115,232,0.10);
+  color: #1f2937;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: transform 0.1s ease; /* no colour transition: the light/dark theme is applied right after insertion and must not visibly fade */
   white-space: nowrap;
   position: relative;
   z-index: 2;
   flex: none;
   min-width: max-content;
 }
-.cgd-export-btn:hover  { background: rgba(59,130,246,0.15); color: #60a5fa !important; }
-.cgd-export-btn:active { background: rgba(59,130,246,0.25); transform: scale(0.97); }
+.cgd-export-btn .cgd-btn-path svg { color: #1a73e8; }
+.cgd-export-btn:hover  { background: rgba(26,115,232,0.18); border-color: rgba(26,115,232,0.65); }
+.cgd-export-btn:active { background: rgba(26,115,232,0.26); transform: scale(0.97); }
 .cgd-export-btn svg    { flex-shrink: 0; }
+.cgd-export-btn[data-cgd-theme="dark"] { color: #e5e7eb; background: rgba(138,180,248,0.16); border-color: rgba(138,180,248,0.5); }
+.cgd-export-btn[data-cgd-theme="dark"] .cgd-btn-path svg { color: #8ab4f8; }
+.cgd-export-btn[data-cgd-theme="dark"]:hover { background: rgba(138,180,248,0.26); border-color: rgba(138,180,248,0.8); }
+
+/* New users: soft pulse until the first click. "Show me" from the popup: stronger, finite ring. */
+.cgd-export-btn.cgd-pulse { animation: cgd-pulse 1.9s ease-out infinite; }
+.cgd-export-btn.cgd-spotlight { animation: cgd-spot 0.9s ease-in-out 5; box-shadow: 0 0 0 5px rgba(26,115,232,0.45); }
+@keyframes cgd-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(26,115,232,0.55); }
+  70%  { box-shadow: 0 0 0 12px rgba(26,115,232,0); }
+  100% { box-shadow: 0 0 0 0 rgba(26,115,232,0); }
+}
+@keyframes cgd-spot {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(26,115,232,0.5); }
+  50%      { box-shadow: 0 0 0 16px rgba(26,115,232,0.12); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cgd-export-btn.cgd-pulse { animation: none; box-shadow: 0 0 0 4px rgba(26,115,232,0.3); }
+  .cgd-export-btn.cgd-spotlight { animation: none; }
+}
 
 /* ── Overlay ────────────────────────────────────────────────── */
 .cgd-panel-overlay {

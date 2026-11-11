@@ -140,14 +140,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const statusBox = document.getElementById('page-status');
   const statusText = document.getElementById('status-text');
   const statusReport = document.getElementById('status-report');
+  const showExportBtn = document.getElementById('show-export');
+  const openSites = document.getElementById('open-sites');
   let statusPlatform = '';
   const msg = (key, fallback) => chrome.i18n.getMessage(key) || fallback;
 
-  function showStatus(ok, text, canReport) {
+  function showStatus(ok, text, opts = {}) {
+    document.body.dataset.state = opts.sites ? 'unsup' : opts.show ? 'found' : 'none';
     statusBox.hidden = false;
     statusBox.classList.toggle('ok', ok);
     statusText.textContent = text;
-    statusReport.hidden = !canReport;
+    statusReport.hidden = !opts.report;
+    showExportBtn.hidden = !opts.show;
+    openSites.hidden = !opts.sites;
   }
 
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -156,14 +161,33 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.tabs.sendMessage(tab.id, { action: 'getPlatform' }, (resp) => {
       void chrome.runtime.lastError;
       if (!resp || !resp.platform) {
-        showStatus(false, msg('statusUnsupported', 'Works on ChatGPT, Gemini, Claude, DeepSeek & Perplexity. Already on one? Refresh the page.'), false);
+        showStatus(false, msg('statusUnsupported', 'Open an AI chat on its website (not the app). Already on one? Refresh the page.'), { sites: true });
         return;
       }
       statusPlatform = resp.platform;
       const n = resp.responseCount || 0;
-      if (n === 1) showStatus(true, msg('statusFoundOne', 'Found 1 reply on this page'), false);
-      else if (n > 1) showStatus(true, msg('statusFoundMany', 'Found {n} replies on this page').replace('{n}', n), false);
-      else showStatus(false, msg('statusNone', 'No AI replies on this page yet.'), true);
+      if (n === 1) showStatus(true, msg('statusFoundOne', 'Found 1 reply on this page'), { show: true });
+      else if (n > 1) showStatus(true, msg('statusFoundMany', 'Found {n} replies on this page').replace('{n}', n), { show: true });
+      else showStatus(false, msg('statusNone', 'No replies yet — send a message and the blue Export button appears under the reply.'), { report: true });
+    });
+  });
+
+  openSites.querySelectorAll('.site-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      chrome.tabs.create({ url: chip.dataset.url });
+      window.close();
+    });
+  });
+
+  showExportBtn.addEventListener('click', () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs && tabs[0];
+      if (!tab || tab.id == null) return;
+      chrome.tabs.sendMessage(tab.id, { action: 'highlightExport' }, (resp) => {
+        void chrome.runtime.lastError;
+        if (resp && resp.ok) { window.close(); return; }
+        showStatus(false, msg('showMeFail', "Couldn't find it here — reload this page and try again."), { report: true });
+      });
     });
   });
 

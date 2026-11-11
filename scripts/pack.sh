@@ -19,7 +19,7 @@ case "$1" in
     ZIP="$DIR/dist/chatgpt-to-google-docs-${VERSION}-webstore.zip"
     cd "$DIR"
     zip -r "$ZIP" manifest.json background.js content.js converter.js \
-      popup.html popup.js privacy.html styles.css LICENSE \
+      popup.html popup.js welcome.html welcome.js privacy.html styles.css LICENSE \
       _locales/ icons/ --exclude "*.DS_Store"
     echo "✓ Switched to PROD client_id + packed → dist/chatgpt-to-google-docs-${VERSION}-webstore.zip"
     ;;

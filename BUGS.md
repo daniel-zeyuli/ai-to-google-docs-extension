@@ -630,6 +630,16 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 
 ---
 
+### IMPROVEMENT: First-minute guidance — new users could not find the Export button (4.5.1)
+**Date:** 2026-10-26
+**Symptom:** After 4.5.0, a second ordinary user (and the earlier friend, plus the 9/23 uninstall reply "there is no button") opened the toolbar popup, read "click Export", and never found the button. They do not read the store images.
+**Root cause:** (1) The button was styled to blend in with the host's gray icons, so new users assumed it was part of ChatGPT/Claude itself and never looked for "an extension's button". (2) Every hint (bubble, panel banner) fired only once the person was already on an AI page with a reply in view; the popup, the first thing they open, only had text.
+**Change:** brand-blue pill button (blue icon, dark/light text by page theme, tooltip "— AI Chat Exporter") that pulses softly until the first click (new users only); welcome tab opened on first install only (`chrome.runtime.onInstalled`, reason `install`) with open-site buttons and a picture of the button; popup is context-aware — off an AI page it offers open-site buttons, on an AI page it offers **Show me the Export button** (content script scrolls to the newest reply's button and rings it); the generic steps are hidden when they are redundant so the popup stays under Chrome's 600px limit (478–584px measured).
+**Verification:** content-script behaviour (pill colours in light/dark, pulse lifecycle, Show-me ring + bubble + cleanup, no overlap), popup heights in en/es, welcome page render, and the install-only hook were exercised in headless Chrome / a stubbed background. **Not verified on live sites or on a real fresh install.**
+**Related files:** `styles.css` (`.cgd-export-btn`, `.cgd-pulse`, `.cgd-spotlight`), `content.js` (`_syncButtonTheme`, `_onFirstExportClick`, `_floatBubble`, `_spotlightExportButton`, `highlightExport` handler), `popup.html`/`popup.js`, `welcome.html`/`welcome.js`, `background.js` (`onInstalled`), `scripts/pack.sh`.
+
+---
+
 ## v4.3 planned features
 
 ### High priority
@@ -638,3 +648,20 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
    - Industry standard pattern
    - 10 uninstalls/day on 5/26 = reliable signal source
    - ~30 min implementation in background.js
+
+---
+
+### IMPROVEMENT: Send report carries DOM-structure diagnostics (4.5.1)
+**Why:** 4 "Could not extract content" reports (ChatGPT 4.5.0, 10/25–11/4) could not be diagnosed from the error text alone; 4.5.0 did not touch extraction, so most likely a ChatGPT DOM change.
+**What:** `_collectDiagnostics` adds tag/class/data-attribute-name skeleton, selector-match flags, text/markdown lengths (no text, ids, hrefs, aria-labels). Form field `Diagnostics` = `entry.396700393`. privacy.html "Error reports" bullet updated.
+**Update 2026-11-09:** two more "Could not extract content from this message" reports (ChatGPT 11/6 Windows; **Claude 11/8 macOS**, Chrome 157) — all 4.5.0, so no Diagnostics yet. Not ChatGPT-only. The message is the single-message path (`exportMessage`: panel with one row selected, "Last", or the shortcut), not the multi-select "Could not extract content". Open item: BUG-054 — once a 4.5.1 report with Diagnostics arrives, read `matched=`/`textlen=`/`md=`: textlen>0 and md=0 → `processNode` skipping content; textlen=0 → stale/emptied element.
+
+---
+
+### BUG-054: Panel export of a reply that scrolled out of a long chat fails ("Could not extract content from this message")
+**Date:** 2026-11-10
+**Symptom:** 6 Send reports (ChatGPT and Claude, 10/25–11/8) with "Could not extract content from this message". The maintainer measured a very long Claude chat: while scrolling top→bottom the number of mounted `.standard-markdown` replies stayed between 7 and 18 the whole way — Claude unmounts off-screen replies. The panel list is a snapshot taken when it opens, so after the user scrolls, the row's element can be detached; its `textContent` is empty and the export fails with the generic message.
+**Status:** Likely cause, not confirmed from a report yet (4.5.0 reports carry no diagnostics). 4.5.1 mitigates and instruments; the full fix (collect replies while scrolling) is planned for 4.5.2.
+**Mitigation (4.5.1):** `_liveMessage(el, preview)` re-finds a detached row by its preview text among the replies currently on the page; if it is gone, the panel says "That reply is no longer on the page (long chats unload older replies). Scroll to it and try again." instead of failing. Diagnostics now include `connected=0/1`.
+**Also noted:** at the end of the same scroll run `[class*="font-user-message"]` matched 0 elements on Claude — the user-message selector for Claude Full export may be stale (unverified).
+**Related files:** `content.js` (`_liveMessage`, `exportSelected` in `_buildSelectPanel`, `_collectDiagnostics`).

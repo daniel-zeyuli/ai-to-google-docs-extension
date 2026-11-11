@@ -48,6 +48,7 @@ These are not style preferences. Each one was learned the hard way — see `BUGS
 - `python3 -m json.tool manifest.json` must succeed before every commit.
 - If a `sandbox` block is present: `content_security_policy.sandbox` lives at the **top level**, not inside the `sandbox` object. The `sandbox` object only takes `pages: [...]`. Wrong placement = extension fails to load (BUG-006).
 - Chrome MV3 rejects `blob:` and `data:` in sandbox `script-src` (BUG-014). Don't add them back.
+- `scripts/pack.sh` zips an **explicit file list**. Any new file the extension needs at runtime (e.g. `welcome.html`, `welcome.js`) must be added there or it is silently missing from the Web Store package — then `chrome.tabs.create` on install opens an error page.
 - Any new `chrome.windows.create` size has to be updated in **every** call site (`background.js` AND `popup.js`). They drifted before.
 
 ### 2.5 Drive API query rules
@@ -66,7 +67,7 @@ notionParentPageId: string (UUID format, normalized on save in popup.js)
 obsidianVault:      string (vault name; if empty, Obsidian uses its default vault)
 defaultExportMode:  'last' | 'full' | 'select'                 // popup + content.js both default to 'select' when unset
 hiddenDestinations: string[] of exportDest values the user hid (v4.5.0) // the active destination is never hidden; ≥1 always visible
-onboardingSeen:     { button?: true, panel?: true }              // v4.5.0 one-time first-run hints; set when shown/dismissed
+onboardingSeen:     { button?: true, panel?: true, clicked?: true } // one-time first-run hints; button/panel set when shown/dismissed (v4.5.0), clicked = first Export click, stops the pulse (v4.5.1)
 citationStyle:      'mla' | 'apa' | 'none'                       // v4.5.0 header citation line; unset = 'mla' (the pre-4.5.0 behavior)
 exportFolderId:     auto-created "AI Chat Exports" parent folder ID
 exportFolderIds:    { [platformName]: subfolderId }          // per-platform subfolder IDs (v1.0)

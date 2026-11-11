@@ -73,25 +73,32 @@
     return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
-  // Fixed tones instead of inheriting: some hosts colour their action bar (DeepSeek made the button purple).
   // Light/dark is read from the background actually behind the button, not isDarkMode(): that trusts
-  // prefers-color-scheme, which says "dark" for a light-themed site on a dark-mode OS (light-gray-on-white).
-  function _buttonTone(el) {
+  // prefers-color-scheme, which says "dark" for a light-themed site on a dark-mode OS.
+  function _buttonTheme(el) {
     for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
       const c = getComputedStyle(n).backgroundColor.match(/[\d.]+/g);
       if (c && c.length >= 3 && (c.length < 4 || +c[3] > 0.5)) {
-        return (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255 < 0.5 ? '#e5e7eb' : '#374151';
+        return (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255 < 0.5 ? 'dark' : 'light';
       }
     }
-    return isDarkMode() ? '#e5e7eb' : '#374151';
+    return isDarkMode() ? 'dark' : 'light';
   }
-  function _syncButtonColors() {
+  let _pulseOn = false; // new user who has not clicked Export yet
+  function _syncButtonTheme() {
     const btns = document.querySelectorAll('.' + BUTTON_CLASS);
     if (!btns.length) return;
-    const tone = _buttonTone(btns[0]);
+    const theme = _buttonTheme(btns[0]);
     btns.forEach(b => {
-      if (b.dataset.cgdTone !== tone) { b.dataset.cgdTone = tone; b.style.color = tone; }
+      if (b.dataset.cgdTheme !== theme) b.dataset.cgdTheme = theme;
+      b.classList.toggle('cgd-pulse', _pulseOn);
     });
+  }
+  function _onFirstExportClick() {
+    if (!_pulseOn) return;
+    _pulseOn = false;
+    document.querySelectorAll('.' + BUTTON_CLASS).forEach(b => b.classList.remove('cgd-pulse'));
+    _markOnboardingSeen('clicked');
   }
 
   function _markOnboardingSeen(key) {
@@ -108,6 +115,11 @@
       !!(d.exportDest || d.defaultExportMode || d.notionToken || d.obsidianVault);
   }
 
+  chrome.storage.local.get(['onboardingSeen', ..._USAGE_KEYS], d => {
+    _pulseOn = !(d.onboardingSeen && d.onboardingSeen.clicked) && !_hasUsedBefore(d);
+    _syncButtonTheme();
+  });
+
   // First-run pointer at the Export button: shown once per install, gone on any click.
   let _buttonTipState = 'unchecked';
   function _maybeShowButtonTip() {
@@ -120,21 +132,19 @@
     });
   }
 
-  function _showButtonTip() {
+  // Small dark bubble that follows `getTarget()` while the page scrolls; any click removes it.
+  function _floatBubble(text, getTarget, onRemove) {
     const bubble = document.createElement('div');
     bubble.className = 'cgd-tip-bubble';
-    bubble.textContent = 'Click Export under any reply to save it';
+    bubble.textContent = text;
     document.body.appendChild(bubble);
 
     let raf = 0;
     function place() {
       raf = 0;
-      const btn = Array.from(document.querySelectorAll('.' + BUTTON_CLASS)).find(b => {
-        const r = b.getBoundingClientRect();
-        return r.width > 0 && r.bottom > 0 && r.top < window.innerHeight;
-      });
-      if (!btn) { bubble.style.visibility = 'hidden'; return; }
-      const r = btn.getBoundingClientRect();
+      const t = getTarget();
+      if (!t) { bubble.style.visibility = 'hidden'; return; }
+      const r = t.getBoundingClientRect();
       let top = r.top - bubble.offsetHeight - 10;
       const below = top < 8;
       if (below) top = r.bottom + 10;
@@ -144,21 +154,87 @@
       bubble.style.visibility = 'visible';
     }
     const schedule = () => { if (!raf) raf = requestAnimationFrame(place); };
-    function dismiss() {
+    let removed = false;
+    function remove() {
+      if (removed) return;
+      removed = true;
       window.removeEventListener('scroll', schedule, true);
       window.removeEventListener('resize', schedule);
-      document.removeEventListener('click', dismiss, true);
+      document.removeEventListener('click', remove, true);
       bubble.remove();
-      _buttonTipState = 'done';
-      _markOnboardingSeen('button');
+      if (onRemove) onRemove();
     }
     window.addEventListener('scroll', schedule, true);
     window.addEventListener('resize', schedule);
-    document.addEventListener('click', dismiss, true);
+    document.addEventListener('click', remove, true);
     place();
+    return remove;
+  }
+
+  function _showButtonTip() {
+    _floatBubble('Click the blue Export button under any reply to save it', () => {
+      return Array.from(document.querySelectorAll('.' + BUTTON_CLASS)).find(b => {
+        const r = b.getBoundingClientRect();
+        return r.width > 0 && r.bottom > 0 && r.top < window.innerHeight;
+      });
+    }, () => { _buttonTipState = 'done'; _markOnboardingSeen('button'); });
+  }
+
+  // Popup → "Show me the Export button": scroll to the newest reply's button and ring it.
+  function _spotlightExportButton() {
+    const btns = Array.from(document.querySelectorAll('.' + BUTTON_CLASS));
+    const btn = btns.filter(b => !b.dataset.cgdFallback).pop() || btns[btns.length - 1];
+    if (!btn) return false;
+    btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    btn.classList.add('cgd-spotlight');
+    const remove = _floatBubble('Here it is — click Export', () => btn, () => btn.classList.remove('cgd-spotlight'));
+    setTimeout(remove, 6000);
+    return true;
   }
 
   // User-initiated only: nothing is sent unless the person clicks "Send report".
+  // Element the last failure was about; lets "Send report" describe its markup (tags/classes only, never text).
+  let _diagEl = null;
+  const _diagTok = s => String(s).replace(/[^\w:.-]/g, '').slice(0, 28);
+
+  function _domSkeleton(el, depth) {
+    let s = el.tagName.toLowerCase();
+    const cls = Array.from(el.classList || []).map(_diagTok).filter(Boolean).slice(0, 3);
+    if (cls.length) s += '.' + cls.join('.');
+    const data = Array.from(el.attributes).map(a => a.name).filter(n => n.startsWith('data-')).map(_diagTok).slice(0, 3);
+    if (data.length) s += '{' + data.join(',') + '}';
+    const kids = Array.from(el.children);
+    if (kids.length && depth > 0) {
+      const shown = kids.slice(0, 5).map(k => _domSkeleton(k, depth - 1));
+      s += '(' + shown.join(' ') + (kids.length > 5 ? ' +' + (kids.length - 5) : '') + ')';
+    } else if (kids.length) {
+      s += '[' + kids.length + ']';
+    } else {
+      s += '#' + (el.textContent || '').length;
+    }
+    return s;
+  }
+
+  function _collectDiagnostics() {
+    try {
+      const parts = [`path=${location.pathname.split('/').filter(Boolean).slice(0, 1).join('') || '/'}`,
+        `roles=${document.querySelectorAll('[data-message-author-role]').length}`];
+      const el = _diagEl || null;
+      if (el) {
+        parts.push('connected=' + (el.isConnected ? 1 : 0));
+        const sel = ['.markdown', '[class*="markdown"]', 'article', '.standard-markdown', '.ds-markdown', '.prose', '.model-response-text']
+          .filter(q => el.querySelector(q)).join(',');
+        parts.push(`matched=${sel || 'none'}`, `textlen=${(el.textContent || '').length}`, `md=${extractMarkdown(el).length}`);
+        parts.push('dom=' + _domSkeleton(el, 5));
+      } else {
+        parts.push('el=none');
+      }
+      return parts.join(' | ').slice(0, 1500);
+    } catch (e) {
+      return 'diag-error: ' + String(e && e.message).slice(0, 100);
+    }
+  }
+
   async function _sendErrorReport(errorText) {
     const platform = isGemini ? 'Gemini' : isClaude ? 'Claude' : isDeepSeek ? 'DeepSeek' : isPerplexity ? 'Perplexity' : 'ChatGPT';
     const prefs = await new Promise(resolve => chrome.storage.local.get(['exportDest', 'defaultExportMode'], resolve));
@@ -170,7 +246,8 @@
       destination: prefs.exportDest || 'drive',
       mode: prefs.defaultExportMode || 'select',
       error: String(errorText).replace(/\s+/g, ' ').trim().slice(0, 200),
-      browser: `Chrome ${chromeVersion} · ${os}`
+      browser: `Chrome ${chromeVersion} · ${os}`,
+      diagnostics: _collectDiagnostics()
     };
     return new Promise(resolve => {
       chrome.runtime.sendMessage({ action: 'sendReport', fields }, resp => {
@@ -1049,6 +1126,7 @@
     _resetImgCaptures();
     const markdown = extractMarkdown(messageEl);
     if (!markdown || !markdown.trim()) {
+      _diagEl = messageEl;
       showToast('❌ Could not extract content from this message', true);
       return;
     }
@@ -1337,6 +1415,12 @@
       }
     });
     return out;
+  }
+
+  // Long chats unload off-screen replies, so a panel row can outlive its element. Re-find it by preview.
+  function _liveMessage(el, preview) {
+    if (el.isConnected) return el;
+    return getAllAIMessages().find(m => getCleanPreview(m) === preview) || null;
   }
 
   function getAllUserMessages() {
@@ -1756,11 +1840,13 @@
     list.className = 'cgd-panel-list';
     const checkboxes = [];
     const rowEls = [];
+    const previews = [];
 
     const userMsgs = getAllUserMessages();
 
     messages.forEach((msgEl, i) => {
       const preview = getCleanPreview(msgEl);
+      previews[i] = preview;
 
       const row = document.createElement('label');
       row.className = 'cgd-msg-row';
@@ -1922,6 +2008,12 @@
     async function exportSelected() {
       const selectedIndices = getSelectedIndices();
       if (selectedIndices.length === 0) return;
+      const liveMsgs = selectedIndices.map(i => _liveMessage(messages[i], previews[i]));
+      if (liveMsgs.includes(null)) {
+        _diagEl = messages[selectedIndices[liveMsgs.indexOf(null)]];
+        showToast('❌ That reply is no longer on the page (long chats unload older replies). Scroll to it and try again.', true);
+        return;
+      }
 
       const target = appendTarget || selectedChip;
       exportBtn.disabled = true;
@@ -1929,7 +2021,7 @@
 
       if (target) {
         // Append mode: send selected responses to existing Doc
-        const parts = selectedIndices.map(i => extractMarkdown(messages[i]).trim()).filter(Boolean);
+        const parts = liveMsgs.map(m => extractMarkdown(m).trim()).filter(Boolean);
         const text = parts.join('\n\n---\n\n');
         chrome.runtime.sendMessage({ action: 'appendToDoc', fileId: target.fileId, text }, (resp) => {
           exportBtn.disabled = false;
@@ -1942,17 +2034,17 @@
 
       // Normal export mode — panel stays open for re-export
       if (selectedIndices.length === 1) {
-        await exportMessage(messages[selectedIndices[0]]);
+        await exportMessage(liveMsgs[0]);
       } else {
         _resetImgCaptures();
         showToast('⏳ Generating document...');
-        const parts = selectedIndices.map(origIdx => {
-          const text = extractMarkdown(messages[origIdx]).trim();
+        const parts = selectedIndices.map((origIdx, k) => {
+          const text = extractMarkdown(liveMsgs[k]).trim();
           return text ? `## ${platform} (Response ${origIdx + 1})\n\n${text}` : '';
         }).filter(Boolean);
         const imageMap = await _captureImages();
         if (parts.length) await exportMarkdown(parts.join('\n\n---\n\n'), '_selected', imageMap);
-        else showToast('❌ Could not extract content', true);
+        else { _diagEl = liveMsgs[0]; showToast('❌ Could not extract content', true); }
       }
 
       exportBtn.disabled = false;
@@ -2384,19 +2476,19 @@
     if (!pathSpan || !labelSpan) return;
     if (exportDest === 'local') {
       pathSpan.innerHTML = EXPORT_ICON_SVG + '<span>Export .docx</span>';
-      btn.title = 'Export as Word file';
+      btn.title = 'Export as Word file — AI Chat Exporter';
     } else if (exportDest === 'markdown') {
       pathSpan.innerHTML = EXPORT_ICON_SVG + '<span>Export .md</span>';
-      btn.title = 'Export as Markdown';
+      btn.title = 'Export as Markdown — AI Chat Exporter';
     } else if (exportDest === 'notion') {
       pathSpan.innerHTML = EXPORT_ICON_SVG + '<span>Export to Notion</span>';
-      btn.title = 'Export to Notion';
+      btn.title = 'Export to Notion — AI Chat Exporter';
     } else if (exportDest === 'obsidian') {
       pathSpan.innerHTML = EXPORT_ICON_SVG + '<span>Export to Obsidian</span>';
-      btn.title = 'Open in Obsidian';
+      btn.title = 'Open in Obsidian — AI Chat Exporter';
     } else {
       pathSpan.innerHTML = EXPORT_ICON_SVG + '<span>Export</span>';
-      btn.title = 'Export to Google Docs';
+      btn.title = 'Export to Google Docs — AI Chat Exporter';
     }
     labelSpan.textContent = '';
     labelSpan.style.display = 'none';
@@ -2419,8 +2511,9 @@
     btn.insertAdjacentHTML('beforeend', svgChevron);
 
     btn.title = 'Export options';
-    btn.dataset.cgdTone = _buttonTone(btn);
-    btn.style.color = btn.dataset.cgdTone;
+    btn.dataset.cgdTheme = _buttonTheme(btn);
+    btn.classList.toggle('cgd-pulse', _pulseOn);
+    btn.addEventListener('click', _onFirstExportClick, true);
     _updateExportBtnContent(btn);
     return btn;
   }
@@ -2874,13 +2967,13 @@
     }, 0);
   }
 
-  function init() { addButtons(); _syncButtonColors(); _maybeShowButtonTip(); setupSelectionButton(); }
+  function init() { addButtons(); _syncButtonTheme(); _maybeShowButtonTip(); setupSelectionButton(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
   const observer = new MutationObserver(() => {
     clearTimeout(observer._t);
-    observer._t = setTimeout(() => { addButtons(); _syncButtonColors(); _maybeShowButtonTip(); }, 200);
+    observer._t = setTimeout(() => { addButtons(); _syncButtonTheme(); _maybeShowButtonTip(); }, 200);
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
@@ -2894,6 +2987,10 @@
       let responseCount = 0;
       try { if (platform) responseCount = getAllAIMessages().length; } catch (_) { /* finder threw — report as 0 so the popup offers Send report */ }
       sendResponse({ platform, responseCount });
+      return;
+    }
+    if (request.action === 'highlightExport') {
+      sendResponse({ ok: _spotlightExportButton() });
       return;
     }
     if (request.action === 'exportLast') {

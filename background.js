@@ -77,13 +77,14 @@ const REPORT_ENTRIES = {
   destination: 'entry.1765785406',
   mode:        'entry.1200776881',
   error:       'entry.664686605',
-  browser:     'entry.1471043997'
+  browser:     'entry.1471043997',
+  diagnostics: 'entry.396700393'
 };
 
 async function sendReport(fields) {
   const body = new URLSearchParams();
   for (const [key, entry] of Object.entries(REPORT_ENTRIES)) {
-    body.set(entry, String((fields && fields[key]) || '').slice(0, 300));
+    body.set(entry, String((fields && fields[key]) || '').slice(0, key === 'diagnostics' ? 1500 : 300));
   }
   // no-cors: Google Forms doesn't send CORS headers; the response is opaque but the POST is delivered.
   await fetch(REPORT_FORM_URL, {
@@ -139,6 +140,14 @@ function registerSelectionContextMenu() {
 }
 
 chrome.runtime.onInstalled.addListener(registerSelectionContextMenu);
+
+// First install only (never on updates): show where the Export button lives. New users who open the
+// toolbar popup first and never read the store images otherwise have no idea what to look for.
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === 'install') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') });
+  }
+});
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'cgd-export-selection' && tab?.id) {
