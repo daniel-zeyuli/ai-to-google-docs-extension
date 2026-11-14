@@ -668,6 +668,16 @@ If the lesson generalizes to a new red line, also add it to `CLAUDE.md` § 2 or 
 
 ---
 
+### BUG-056: Claude — no Export buttons after user-message filtering
+**Date:** 2026-11-14
+**Root cause:** Live claude.ai inspection found the transcript ancestor class `code-blocks-follow-text-size`. The old `[class*="code-block"]` ancestor check therefore classified every native reply Copy button as a code-block control. Both mounted AI toolbars had Copy buttons but zero Export buttons.
+**Fix:** The existing working-tree `_claudeInCodeBlock` change checks class tokens and stops at the nearest message scope. Preserve `_claudeInUserTurn` so user controls remain excluded.
+**Verification:** Read-only probes on both live AI toolbars reproduced the old rejection and confirmed the working-tree scope/code checks pass with markdown present and no user descendants. `node scripts/test-claude-button-guards.cjs` covers the real guard functions with synthetic ancestry. Extension reload and visible restored buttons were NOT verified: browser policy blocked `chrome://extensions/`.
+**Follow-up (same day):** the token test was tightened so `code-blocks-follow-text-size` itself no longer matches even without a message scope (`(^|[-_])code-?block($|[-_])|CodeBlock` on plain word tokens only). The published 4.5.1 has the same substring check, so it shows no Export buttons on Claude either — the regression came from Claude's deploy, not from the 4.5.2 changes.
+**Related files:** `content.js`, `scripts/test-claude-button-guards.cjs`.
+
+---
+
 ### BUG-055: Claude — Export button also appears under the user's own messages (and exports the previous AI reply)
 **Date:** 2026-11-14
 **Symptom:** On Claude, every user message got an Export button under it (right-aligned, next to Retry/Edit/Copy), besides the one under the AI reply. Clicking it exported the *previous* AI reply.

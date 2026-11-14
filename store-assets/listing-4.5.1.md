@@ -31,6 +31,7 @@ NOVEDADES EN 4.5.1
 WHAT'S NEW IN 4.5.2
 • Export the whole chat: one button in the export panel saves every reply and your questions. Long Claude chats are loaded from top to bottom automatically, so nothing is cut off.
 • Citation style in the panel: pick MLA, APA or no citation right where you export.
+• Fixed: Export buttons are back on Claude after Claude's latest page update.
 • Fixed: on Claude, the Export button no longer appears under your own messages.
 • Fixed: Claude full-conversation exports include your questions again.
 • Also in 4.5: first-run guide, a blue Export button that is easy to spot, and "Show me the Export button" in the toolbar menu.

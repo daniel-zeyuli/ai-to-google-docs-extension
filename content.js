@@ -1525,7 +1525,7 @@
       let p = btn.parentElement;
       for (let i = 0; i < 12 && p && p !== document.body; i++, p = p.parentElement) {
         const md = p.querySelector('.standard-markdown, [class*="markdown"]');
-        if (md && !p.querySelector(CLAUDE_USER_SEL) && !btn.closest('[data-user-scope]')) {
+        if (md && !p.querySelector(CLAUDE_USER_SEL) && !_claudeInUserTurn(btn)) {
           if (!out.includes(md)) out.push(md);
           return;
         }
@@ -1543,6 +1543,11 @@
   // Nov 2026 Claude DOM: the font-user-message class is gone; each turn sits in [data-user-scope] or
   // [data-reply-scope]. Keep the old class as a fallback for older layouts.
   const CLAUDE_USER_SEL = '[class*="font-user-message"], [data-user-scope]';
+  // Judge by the NEAREST scope only: an outer wrapper carrying data-user-scope must not hide every button.
+  function _claudeInUserTurn(el) {
+    const scope = el.closest('[data-user-scope], [data-reply-scope]');
+    return !!scope && scope.hasAttribute('data-user-scope') && !scope.hasAttribute('data-reply-scope');
+  }
 
   function _claudeUserMessages() {
     const legacy = Array.from(document.querySelectorAll('[class*="font-user-message"]'))
@@ -1550,7 +1555,7 @@
     if (legacy.length) return legacy;
     // The user turn row holds the message bubble plus a hover toolbar ([data-reveal]); return the bubble.
     return Array.from(document.querySelectorAll('[data-user-scope]'))
-      .filter(el => !el.parentElement?.closest('[data-user-scope]'))
+      .filter(el => !el.querySelector('[data-user-scope]'))
       .map(_claudeUserBubble);
   }
 
@@ -2716,6 +2721,18 @@
     return null;
   }
 
+  // Whole class TOKENS only: Claude's utility classes can mention a code block inside a variant
+  // (e.g. "[&_.code-block]:mt-2"), and the transcript wrapper carries "code-blocks-follow-text-size"
+  // (BUG-056). A substring match on those made every Copy button look like a code-block one.
+  function _claudeInCodeBlock(btn) {
+    for (let el = btn.parentElement; el && el !== document.body; el = el.parentElement) {
+      if (el.tagName === 'PRE' || el.hasAttribute('data-code-block')) return true;
+      if (Array.from(el.classList).some(c => /^[\w-]+$/.test(c) && /(^|[-_])code-?block($|[-_])|CodeBlock/i.test(c))) return true;
+      if (el.hasAttribute('data-reply-scope') || el.hasAttribute('data-user-scope')) return false;
+    }
+    return false;
+  }
+
   function addClaudeButtons() {
     const copyButtons = document.querySelectorAll('button[aria-label="Copy"]');
 
@@ -2723,14 +2740,7 @@
       // Exclude code-block copy buttons. Claude's code block header is a sibling of <pre>,
       // not inside it, so we also check whether a <pre> is a direct child of the button's
       // nearby ancestors (up to 3 hops) to catch the current Claude DOM structure.
-      let isCodeBlockCopy = !!(
-        copyBtn.closest('pre') ||
-        copyBtn.closest('[data-code-block]') ||
-        copyBtn.closest('.code-block') ||
-        copyBtn.closest('[class*="code-block"]') ||
-        copyBtn.closest('[class*="codeblock"]') ||
-        copyBtn.closest('[class*="CodeBlock"]')
-      );
+      let isCodeBlockCopy = _claudeInCodeBlock(copyBtn);
       if (!isCodeBlockCopy) {
         let el = copyBtn.parentElement;
         for (let j = 0; j < 3 && el; j++, el = el.parentElement) {
@@ -2741,7 +2751,7 @@
         }
       }
       if (isCodeBlockCopy) continue;
-      if (copyBtn.closest('[data-user-scope]')) continue;
+      if (_claudeInUserTurn(copyBtn)) continue;
 
       // Anchor placement to the actual horizontal row of response controls.
       // Broad Claude utility classes such as `.text-text-300` can also match

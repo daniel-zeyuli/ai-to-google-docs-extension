@@ -297,6 +297,11 @@ This is a fine and honest report. Claiming "all tests pass" without running them
 - Export Full conversation on Claude: contains `## You` sections with your questions and no "missing your own messages" notice.
 - Panel rows on Claude show the question preview above each reply.
 
+## Claude missing Export buttons (BUG-056)
+- Run `node scripts/test-claude-button-guards.cjs` for scope and code-block guard regression checks.
+- Reload the unpacked extension, then reload a Claude conversation with multiple questions, AI replies and a code block. Export must appear in each mounted AI toolbar, never on user messages or code-block toolbars. Click Export on a reply and confirm the panel selects that reply.
+- A reply without a mounted native toolbar may have no Export until its toolbar mounts.
+
 ## v4.5.2 — Whole-chat export and panel citation (BUG-054)
 - Long Claude chat (50+ turns): panel → "Export the whole chat →" → toast counts replies while the page scrolls, then the document holds every question and reply in order; the page returns to where it was. Cancel stops it with "Export cancelled".
 - Short chat (any platform): the same button exports immediately, no scrolling.
