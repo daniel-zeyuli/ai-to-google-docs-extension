@@ -23,3 +23,14 @@ NOVEDADES EN 4.5.1
 • Chats largos: si una respuesta ya no está en la página, verás un aviso claro en lugar de un error (solución completa en 4.5.2).
 • Textos más claros: funciona en las webs de IA en Chrome, no dentro de sus apps.
 • "Enviar informe" puede incluir la estructura de la página (solo nombres de etiquetas y clases, nunca el texto del chat).
+
+---
+
+# 4.5.2 — replace WHAT'S NEW with:
+
+WHAT'S NEW IN 4.5.2
+• Export the whole chat: one button in the export panel saves every reply and your questions. Long Claude chats are loaded from top to bottom automatically, so nothing is cut off.
+• Citation style in the panel: pick MLA, APA or no citation right where you export.
+• Fixed: on Claude, the Export button no longer appears under your own messages.
+• Fixed: Claude full-conversation exports include your questions again.
+• Also in 4.5: first-run guide, a blue Export button that is easy to spot, and "Show me the Export button" in the toolbar menu.

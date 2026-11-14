@@ -1162,10 +1162,118 @@
   //  POPUP: EXPORT FULL CONVERSATION
   // ═══════════════════════════════════════════════════════════════
 
+  // ── Long Claude chats (BUG-054) ──
+  // Claude keeps only the rows near the viewport mounted, so the page never holds the whole chat.
+  // Scroll through the list once and extract each row while it is mounted; rows carry an absolute
+  // data-index, which gives order, de-duplication and gap detection.
+  function _claudeScroller() {
+    let el = document.querySelector('[data-rocksteady-sizer]') || document.querySelector('[data-perf-row]');
+    for (el = el && el.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+      if (el.scrollHeight > el.clientHeight + 40 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) return el;
+    }
+    return null;
+  }
+
+  function _progressToast(onCancel) {
+    const existing = document.querySelector('.' + BANNER_CLASS);
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.className = BANNER_CLASS;
+    toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:8px;z-index:99999;font-size:14px;font-family:-apple-system,sans-serif;color:white;box-shadow:0 4px 12px rgba(0,0,0,0.3);background:#1a7f37;max-width:600px;text-align:center;';
+    const label = document.createElement('span');
+    const cancel = document.createElement('button');
+    cancel.textContent = 'Cancel';
+    cancel.style.cssText = 'margin-left:14px;padding:3px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.75);background:transparent;color:white;font-size:12px;cursor:pointer;';
+    cancel.addEventListener('click', onCancel);
+    toast.append(label, cancel);
+    document.body.appendChild(toast);
+    return { update: text => { label.textContent = text; }, remove: () => toast.remove() };
+  }
+
+  // Returns null when the page is not a long virtualized Claude chat (caller uses the normal path),
+  // 'cancelled', or { turns, missing }.
+  async function _claudeCollectWholeChat() {
+    const scroller = _claudeScroller();
+    if (!scroller || !document.querySelector('[data-perf-row][data-index]')) return null;
+    if (scroller.scrollHeight <= scroller.clientHeight * 1.5) return null;
+
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    const seen = new Set();
+    const rows = new Map();
+    const harvest = () => {
+      for (const row of document.querySelectorAll('[data-perf-row][data-index]')) {
+        const idx = Number(row.getAttribute('data-index'));
+        seen.add(idx);
+        if (rows.has(idx)) continue;
+        const userScope = row.querySelector('[data-user-scope]');
+        if (userScope) {
+          rows.set(idx, { role: 'You', text: extractMarkdown(_claudeUserBubble(userScope)).trim() });
+        } else if (row.querySelector('[data-reply-scope]')) {
+          const text = Array.from(row.querySelectorAll('.standard-markdown'))
+            .filter(el => !el.parentElement?.closest('.standard-markdown'))
+            .map(el => extractMarkdown(el).trim()).filter(Boolean).join('\n\n');
+          if (text) rows.set(idx, { role: 'Claude', text });
+        }
+      }
+    };
+
+    const rowAtCenter = () => {
+      const box = scroller.getBoundingClientRect();
+      const mid = box.top + box.height / 2;
+      return Array.from(document.querySelectorAll('[data-perf-row][data-index]')).some(row => {
+        const r = row.getBoundingClientRect();
+        return r.top <= mid && r.bottom >= mid;
+      });
+    };
+    let cancelled = false;
+    const toast = _progressToast(() => { cancelled = true; });
+    const startTop = scroller.scrollTop;
+    const replyCount = () => Array.from(rows.values()).filter(r => r.role === 'Claude').length;
+    toast.update('⏳ Loading the whole chat…');
+
+    // Go to the top and give Claude a moment to mount the first rows (index 0).
+    for (let i = 0; i < 10 && !cancelled; i++) {
+      scroller.scrollTop = 0;
+      await wait(300);
+      if (document.querySelector('[data-perf-row][data-index="0"]')) break;
+    }
+    let endHits = 0;
+    for (let i = 0; i < 3000 && !cancelled; i++) {
+      harvest();
+      toast.update(`⏳ Loading the whole chat… ${replyCount()} replies so far`);
+      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4) {
+        if (++endHits >= 2) break;
+      } else {
+        endHits = 0;
+      }
+      scroller.scrollTop += Math.round(scroller.clientHeight * 0.9);
+      await wait(350);
+      // Give a slow page more time until some row is mounted at the middle of the viewport.
+      for (let k = 0; k < 5 && !cancelled && !rowAtCenter(); k++) await wait(300);
+    }
+    scroller.scrollTop = startTop;
+    toast.remove();
+    if (cancelled) return 'cancelled';
+
+    const order = Array.from(rows.keys()).sort((a, b) => a - b);
+    const turns = [];
+    for (const idx of order) {
+      const r = rows.get(idx);
+      if (!r.text) continue;
+      const prev = turns[turns.length - 1];
+      if (prev && prev.role === 'You' && r.role === 'You') prev.text += '\n\n' + r.text;
+      else turns.push({ role: r.role, text: r.text });
+    }
+    let missing = 0;
+    if (seen.size) for (let i = Math.min(...seen); i <= Math.max(...seen); i++) if (!seen.has(i)) missing++;
+    return { turns, missing };
+  }
+
   async function exportFullConversation() {
     showToast('⏳ Collecting conversation...');
     _resetImgCaptures();
     const turns = [];
+    let _wholeChat = null;
 
     if (isChatGPT) {
       // ChatGPT's Sept 2026 redesign (BUG-033) removed data-message-author-role
@@ -1206,6 +1314,16 @@
         const text = extractMarkdown(el).trim();
         if (text) turns.push({ role, text });
       }
+    } else if (isClaude && (_wholeChat = await _claudeCollectWholeChat())) {
+      if (_wholeChat === 'cancelled') { showToast('Export cancelled'); return; }
+      if (_wholeChat.missing) {
+        turns.push({
+          role: '⚠️ Notice',
+          text: `${_wholeChat.missing} part(s) of this chat could not be loaded while scrolling and are missing below. Try exporting again.`
+        });
+      }
+      turns.push(..._wholeChat.turns);
+      showToast('⏳ Generating document...');
     } else if (isClaude) {
       const userEls = _claudeUserMessages();
       const aiEls = _claudeFindResponses();
@@ -1433,12 +1551,14 @@
     // The user turn row holds the message bubble plus a hover toolbar ([data-reveal]); return the bubble.
     return Array.from(document.querySelectorAll('[data-user-scope]'))
       .filter(el => !el.parentElement?.closest('[data-user-scope]'))
-      .map(scope => {
-        const row = scope.querySelector('[data-turn-key]') || scope;
-        const parts = Array.from(row.children).filter(k => !k.matches('[data-reveal]') && !k.querySelector('[data-reveal]'));
-        parts.sort((a, b) => (b.textContent || '').length - (a.textContent || '').length);
-        return parts[0] || row;
-      });
+      .map(_claudeUserBubble);
+  }
+
+  function _claudeUserBubble(scope) {
+    const row = scope.querySelector('[data-turn-key]') || scope;
+    const parts = Array.from(row.children).filter(k => !k.matches('[data-reveal]') && !k.querySelector('[data-reveal]'));
+    parts.sort((a, b) => (b.textContent || '').length - (a.textContent || '').length);
+    return parts[0] || row;
   }
 
   function getAllUserMessages() {
@@ -1851,6 +1971,18 @@
     const controls = document.createElement('div');
     controls.className = 'cgd-panel-controls';
     controls.innerHTML = `<button class="cgd-ctrl-btn" id="cgd-sa">Select all</button><button class="cgd-ctrl-btn" id="cgd-sn">Deselect all</button>`;
+    if (!appendTarget) {
+      const cite = document.createElement('select');
+      cite.className = 'cgd-ctrl-btn cgd-cite-select';
+      cite.title = 'Citation line at the top of the exported document';
+      cite.innerHTML = '<option value="mla">Cite: MLA</option><option value="apa">Cite: APA</option><option value="none">No citation</option>';
+      cite.value = citationStyle;
+      cite.addEventListener('change', () => {
+        citationStyle = cite.value;
+        chrome.storage.local.set({ citationStyle: cite.value });
+      });
+      controls.appendChild(cite);
+    }
 
     // ── Message list ──
     const list = document.createElement('div');
@@ -1976,6 +2108,17 @@
 
     pickArea.appendChild(controls);
     pickArea.appendChild(list);
+    if (!appendTarget) {
+      const wholeBtn = document.createElement('button');
+      wholeBtn.className = 'cgd-whole-btn';
+      wholeBtn.textContent = 'Export the whole chat →';
+      wholeBtn.title = 'Every reply and your questions. Long chats are loaded from top to bottom first.';
+      wholeBtn.addEventListener('click', async () => {
+        wholeBtn.disabled = true;
+        try { await exportFullConversation(); } finally { wholeBtn.disabled = false; }
+      });
+      pickArea.appendChild(wholeBtn);
+    }
     pickArea.appendChild(footer);
 
     // ── Assemble: skip dest/recent/path rows in append mode ──

@@ -296,3 +296,8 @@ This is a fine and honest report. Claiming "all tests pass" without running them
 - Claude chat with several turns: Export appears only under Claude's replies, never under your own messages (Retry/Edit/Copy row).
 - Export Full conversation on Claude: contains `## You` sections with your questions and no "missing your own messages" notice.
 - Panel rows on Claude show the question preview above each reply.
+
+## v4.5.2 — Whole-chat export and panel citation (BUG-054)
+- Long Claude chat (50+ turns): panel → "Export the whole chat →" → toast counts replies while the page scrolls, then the document holds every question and reply in order; the page returns to where it was. Cancel stops it with "Export cancelled".
+- Short chat (any platform): the same button exports immediately, no scrolling.
+- Panel "Cite:" selector: switch to APA → next export's header shows `Citation (APA)`; reopen the popup → it shows APA too. Not shown in append mode.

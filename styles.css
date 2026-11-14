@@ -328,6 +328,21 @@
   transition: background 0.13s, border-color 0.13s;
 }
 .cgd-ctrl-btn:hover { background: var(--p-row-hover); border-color: var(--p-muted); }
+.cgd-cite-select { margin-left: auto; font-family: inherit; max-width: 120px; }
+.cgd-whole-btn {
+  margin: 6px 12px 2px;
+  padding: 6px 10px;
+  background: none;
+  border: 1px dashed var(--p-divider);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--p-sub);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.13s, border-color 0.13s;
+}
+.cgd-whole-btn:hover { background: var(--p-row-hover); border-color: var(--p-muted); }
+.cgd-whole-btn:disabled { opacity: 0.55; cursor: default; }
 
 /* ── Message list ────────────────────────────────────────────── */
 .cgd-panel-list {
