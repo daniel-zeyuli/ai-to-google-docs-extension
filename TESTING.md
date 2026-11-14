@@ -291,3 +291,8 @@ This is a fine and honest report. Claiming "all tests pass" without running them
 ## v4.5.1 — Detached reply in panel (BUG-054)
 - Long Claude/ChatGPT chat: open the panel, scroll far away from the selected reply, click Export → either exports normally (re-found) or shows "That reply is no longer on the page…" — never "Could not extract content".
 - Send report from that toast → Diagnostics starts with `path=… | roles=… | connected=0`.
+
+## v4.5.2 — Claude user messages (BUG-055)
+- Claude chat with several turns: Export appears only under Claude's replies, never under your own messages (Retry/Edit/Copy row).
+- Export Full conversation on Claude: contains `## You` sections with your questions and no "missing your own messages" notice.
+- Panel rows on Claude show the question preview above each reply.

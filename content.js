@@ -739,7 +739,7 @@
       if (!md.includes('[[IMG:') && md.trim().length < 20) {
         let ancestor = messageEl.parentElement;
         for (let i = 0; i < 6 && ancestor && ancestor !== document.body; i++, ancestor = ancestor.parentElement) {
-          if (ancestor.querySelector('[class*="font-user-message"]')) continue;
+          if (ancestor.querySelector(CLAUDE_USER_SEL)) continue;
           const ancText = (ancestor.textContent || '').trim();
           if (ancText.length < 40) continue;
           let mdAnc = '';
@@ -1207,10 +1207,9 @@
         if (text) turns.push({ role, text });
       }
     } else if (isClaude) {
-      const userEls = Array.from(document.querySelectorAll('[class*="font-user-message"]'))
-        .filter(el => !el.parentElement?.closest('[class*="font-user-message"]'));
+      const userEls = _claudeUserMessages();
       const aiEls = _claudeFindResponses();
-      // Defensive check (BUG-042 follow-up): font-user-message is the only signal
+      // Defensive check (BUG-042 follow-up): the user-message selector is the only signal
       // identifying Claude's own user-message turns, and this project has seen
       // host platforms rename classes across redesigns before (BUG-018, BUG-033).
       // If it ever stops matching, fail loudly in the exported doc itself rather
@@ -1408,7 +1407,7 @@
       let p = btn.parentElement;
       for (let i = 0; i < 12 && p && p !== document.body; i++, p = p.parentElement) {
         const md = p.querySelector('.standard-markdown, [class*="markdown"]');
-        if (md && !p.querySelector('[class*="font-user-message"]')) {
+        if (md && !p.querySelector(CLAUDE_USER_SEL) && !btn.closest('[data-user-scope]')) {
           if (!out.includes(md)) out.push(md);
           return;
         }
@@ -1423,10 +1422,28 @@
     return getAllAIMessages().find(m => getCleanPreview(m) === preview) || null;
   }
 
+  // Nov 2026 Claude DOM: the font-user-message class is gone; each turn sits in [data-user-scope] or
+  // [data-reply-scope]. Keep the old class as a fallback for older layouts.
+  const CLAUDE_USER_SEL = '[class*="font-user-message"], [data-user-scope]';
+
+  function _claudeUserMessages() {
+    const legacy = Array.from(document.querySelectorAll('[class*="font-user-message"]'))
+      .filter(el => !el.parentElement?.closest('[class*="font-user-message"]'));
+    if (legacy.length) return legacy;
+    // The user turn row holds the message bubble plus a hover toolbar ([data-reveal]); return the bubble.
+    return Array.from(document.querySelectorAll('[data-user-scope]'))
+      .filter(el => !el.parentElement?.closest('[data-user-scope]'))
+      .map(scope => {
+        const row = scope.querySelector('[data-turn-key]') || scope;
+        const parts = Array.from(row.children).filter(k => !k.matches('[data-reveal]') && !k.querySelector('[data-reveal]'));
+        parts.sort((a, b) => (b.textContent || '').length - (a.textContent || '').length);
+        return parts[0] || row;
+      });
+  }
+
   function getAllUserMessages() {
     if (isChatGPT) return _chatGPTFindUserMessages();
-    if (isClaude)  return Array.from(document.querySelectorAll('[class*="font-user-message"]'))
-                     .filter(el => !el.parentElement?.closest('[class*="font-user-message"]'));
+    if (isClaude)  return _claudeUserMessages();
     if (isGemini)  {
       const qs = Array.from(document.querySelectorAll('user-query'));
       return qs.length ? qs : Array.from(document.querySelectorAll('message-content[data-content-type="user"]'));
@@ -2581,6 +2598,7 @@
         }
       }
       if (isCodeBlockCopy) continue;
+      if (copyBtn.closest('[data-user-scope]')) continue;
 
       // Anchor placement to the actual horizontal row of response controls.
       // Broad Claude utility classes such as `.text-text-300` can also match
@@ -2594,10 +2612,14 @@
       // `.standard-markdown` element — that's the AI response body in current
       // Claude. Bounded to 6 levels (not a generous 10) to reduce the chance
       // of overshooting into an adjacent turn's response.
-      let responseContainer = actionBar.parentElement;
-      for (let i = 0; i < 6 && responseContainer && responseContainer !== document.body; i++) {
-        if (responseContainer.querySelector('.standard-markdown')) break;
-        responseContainer = responseContainer.parentElement;
+      // Current Claude bounds each reply with [data-reply-scope]; never search past it into other turns.
+      let responseContainer = copyBtn.closest('[data-reply-scope]');
+      if (!responseContainer) {
+        responseContainer = actionBar.parentElement;
+        for (let i = 0; i < 6 && responseContainer && responseContainer !== document.body; i++) {
+          if (responseContainer.querySelector('.standard-markdown')) break;
+          responseContainer = responseContainer.parentElement;
+        }
       }
       if (!responseContainer || responseContainer === document.body) continue;
       const markdownEl = responseContainer.querySelector('.standard-markdown');
@@ -2605,7 +2627,7 @@
 
       // Skip user message containers (class-name check — kept as one signal,
       // but Claude has renamed this class before, so it's not trusted alone).
-      if (responseContainer.querySelector('[class*="font-user-message"]')) continue;
+      if (responseContainer.querySelector(CLAUDE_USER_SEL)) continue;
 
       // Structural, class-name-independent safety net: the assistant's own
       // Copy button cannot precede its own response body in document order.
